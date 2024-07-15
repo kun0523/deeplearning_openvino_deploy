@@ -44,7 +44,7 @@ void warmUp(void* compiled_model, char* msg, size_t msg_len){
         msg_ss << "WarmUp Model Pointer: " << compiled_model << "\n";
         cv::Mat blob_img = cv::Mat::ones(cv::Size(1024, 1024), CV_32FC3);
         char msg[1024];
-        doInferenceBy3chImg(blob_img.data, blob_img.rows, blob_img.cols, compiled_model, msg);
+        doInferenceByImgMat(blob_img, compiled_model, msg);
 
         // size_t input_w = input_shape[2], input_h = input_shape[3];
         // cv::Mat blob = cv::dnn::blobFromImage(blob_img, 1.0, cv::Size(input_w, input_h));
@@ -72,9 +72,9 @@ CLS_RES doInferenceByImgPth(const char* image_pth, void* compiled_model, const i
     return doInferenceByImgMat(img_part, compiled_model, msg, msg_len);
 }
 
-CLS_RES doInferenceBy3chImg(uchar* image_arr, int height, int width, void* compiled_model, char* msg, size_t msg_len){
+CLS_RES doInferenceBy3chImg(uchar* image_arr, const int height, const int width, void* compiled_model, char* msg, size_t msg_len){
     
-    cv::Mat img(height, width, CV_8UC3, image_arr);
+    cv::Mat img(cv::Size(width, height), CV_8UC3, image_arr);
     return doInferenceByImgMat(img, compiled_model, msg, msg_len);
 }
 

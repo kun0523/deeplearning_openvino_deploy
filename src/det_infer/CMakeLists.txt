@@ -7,6 +7,6 @@ set(CMAKE_PREFIX_PATH E:\\cpp_packages\\w_openvino_toolkit_windows_2023.2.0.1308
 find_package(OpenVINO REQUIRED)
 
 add_library(${PROJECT_NAME} SHARED inference.cxx)
-# target_include_directories(${PROJECT_NAME} INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(${PROJECT_NAME} INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(${PROJECT_NAME} PUBLIC ${OpenCV_LIBS})
 target_link_libraries(${PROJECT_NAME} PUBLIC openvino::runtime)

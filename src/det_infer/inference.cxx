@@ -15,44 +15,68 @@ std::string DET_RES::get_info(){
     return ss.str();
 }
 
-// TODO: 还需要写一个回收的接口
 void* initModel(const char* onnx_pth, char* msg){
-    // 根据模型onnx文件路径，返回模型指针
+    std::stringstream msg_ss;
+    msg_ss << "Call <initModel> Func\n";
     ov::Core core;
     ov::CompiledModel* compiled_model_ptr = nullptr;
-    string msg_s;
-    try{
-        compiled_model_ptr = new ov::CompiledModel(core.compile_model(onnx_pth, "CPU"));
-        msg_s = "Create Compiled model Success.";
+
+    try{   
+        // 验证openvino环境是否正确     
+        auto devices = core.get_available_devices();
+        auto version = core.get_versions(core.get_available_devices()[0]);
+        for(auto& item:version){
+            msg_ss << item.first << " : " << item.second << "\n";
+        }
     }catch(std::exception ex){
-        msg_s = string(ex.what());
+        msg_ss << "OpenVINO Error!\n";
+        msg_ss << ex.what() << "\n";
+        strcpy_s(msg, 1024, msg_ss.str().c_str());
+        return compiled_model_ptr;
+    }   
+
+    try{
+        // 创建模型
+        // std::shared_ptr<ov::Model> model = core.read_model(onnx_pth);
+        // model->get_parameters()[0]->set_layout("NCHW");
+        // ov::set_batch(model, 5);
+        // cout << model->input().get_shape() << endl;
+
+        compiled_model_ptr = new ov::CompiledModel(core.compile_model(onnx_pth, "CPU"));
+        core.set_property("CPU", ov::num_streams(6));
+        msg_ss << "Create Compiled model Success. Got Model Pointer: " << compiled_model_ptr << "\n";
+    }catch(std::exception ex){
+        msg_ss << "Create Model Failed\n";
+        msg_ss << "Error Message: " << ex.what() << "\n";
+
+        strcpy_s(msg, 1024, msg_ss.str().c_str());
+        return compiled_model_ptr;
     }
 
-    strcpy_s(msg, 1024, msg_s.c_str());
+    warmUp(compiled_model_ptr, msg); 
+    msg_ss << msg; 
+    strcpy_s(msg, 1024, msg_ss.str().c_str());
     return compiled_model_ptr;
 }
 
 void warmUp(void* model_ptr, char* msg){
-    string msg_s;
-    try{
-        ov::CompiledModel* model = static_cast<ov::CompiledModel*>(model_ptr);
-        ov::InferRequest infer_request = model->create_infer_request();
-        auto input_port = model->input();  // 假设模型只有一个输入
-        ov::Shape input_shape = input_port.get_shape();
+    cout << "msg init: " << msg << endl;
+    std::stringstream msg_ss;
+    msg_ss << "Call <warmUp> Func ...\n";
 
+    try{
+        msg_ss << "WarmUp Model Pointer: " << model_ptr << "\n";        
         cv::Mat blob_img = cv::Mat::ones(cv::Size(1024, 1024), CV_32FC3);
-        size_t input_w = input_shape[2], input_h = input_shape[3];
-        cv::Mat blob = cv::dnn::blobFromImage(blob_img, 1.0, cv::Size(input_w, input_h));
-        ov::Tensor input_tensor(input_port.get_element_type(), input_port.get_shape(), blob.ptr());
-        infer_request.set_input_tensor(input_tensor);
-        infer_request.infer();
-        msg_s = "WarmUp Complete.";
+        size_t det_num;
+        doInferenceByImgMat(blob_img, model_ptr, 0.5f, true, det_num, msg);
+        msg_ss << msg;
+        msg_ss << "WarmUp Complete.";
     }catch(std::exception ex){
-        cout << ex.what() << endl;
-        msg_s = string(ex.what());
+        msg_ss << "Catch Error in Warmup Func\n";
+        msg_ss << "Error Message: " << ex.what() << endl;
     }
 
-    strcpy_s(msg, 1024, msg_s.c_str());
+    strcpy_s(msg, 1024, msg_ss.str().c_str());
 }
 
 char* postProcess(const float conf_threshold, cv::Mat& det_result_mat, const double scale_ratio_, const int left_padding, const int top_padding, bool do_nms, std::vector<DET_RES>& out_vec){
@@ -114,20 +138,31 @@ char* postProcess(const float conf_threshold, cv::Mat& det_result_mat, const dou
     return "Post Process Complete.";
 }
 
-DET_RES* doInferenceBy3chImg(uchar* image_arr, int height, int width, void* model_ptr, const float score_threshold, const bool is_use_nms, size_t& det_num, char* msg){
+DET_RES* doInferenceBy3chImg(uchar* image_arr, const int height, const int width, void* model_ptr, const float score_threshold, const bool is_use_nms, size_t& det_num, char* msg){
     // 对三通道的图进行推理
-    cv::Mat img(height, width, CV_8UC3, image_arr);
+    cv::Mat img(cv::Size(width, height), CV_8UC3, image_arr);
     return doInferenceByImgMat(img, model_ptr, score_threshold, is_use_nms, det_num, msg);
 }
 
 DET_RES* doInferenceByImgMat(const cv::Mat& img_mat, void* compiled_model, const float score_threshold, const bool is_use_nms, size_t& det_num, char* msg){
-    ov::CompiledModel* model_ptr = static_cast<ov::CompiledModel*>(compiled_model);
-    ov::Shape input_tensor_shape = model_ptr->input().get_shape();
-    auto start = std::chrono::high_resolution_clock::now();
 
+    std::stringstream msg_ss;
+    msg_ss << "Call <doInferenceByImgMat> Func\n";
+
+    ov::CompiledModel* model_ptr = static_cast<ov::CompiledModel*>(compiled_model);
+    if(model_ptr==nullptr){
+        msg_ss << "Error, Got nullptr, Model pointer convert failed\n";
+        return nullptr;
+    }else{
+        msg_ss << "Convert Model Pointer Success.\n";
+        msg_ss << "Got Inference Model Pointer: " << model_ptr << "\n";                
+    }
+    ov::Shape input_tensor_shape = model_ptr->input().get_shape();
+    msg_ss << "Model Input Shape: " << input_tensor_shape << "\n";
+
+    auto start = std::chrono::high_resolution_clock::now();
     // // TODO: 增强
     // img_mat.convertTo(img_mat, -1, 1, -20);
-
     cv::Mat resized_img;
     double scale_ratio;
     int left_padding_cols, top_padding_rows;
@@ -137,19 +172,18 @@ DET_RES* doInferenceByImgMat(const cv::Mat& img_mat, void* compiled_model, const
     opencvMat2Tensor(blob_img, *model_ptr, inputensor);
     auto img_preprocess_done = std::chrono::high_resolution_clock::now();
     
-    ov::InferRequest infer_request = model_ptr->create_infer_request();
+    ov::InferRequest infer_request = model_ptr->create_infer_request();    
     infer_request.set_input_tensor(inputensor);
     infer_request.infer();
     auto infer_done = std::chrono::high_resolution_clock::now();
 
     std::chrono::duration<double, std::milli> img_preprocess_cost = img_preprocess_done - start;
     std::chrono::duration<double, std::milli> inference_cost = infer_done - img_preprocess_done;
-    std::stringstream msg_ss;
-    msg_ss << "Image Preprocess cost: " << img_preprocess_cost.count() << "ms";
-    msg_ss << " Infer cost: " << inference_cost.count() << "ms";
-    strcpy_s(msg, 1024, msg_ss.str().c_str());
+    msg_ss << "Image Preprocess cost: " << img_preprocess_cost.count() << "ms Infer cost: " << inference_cost.count() << "ms\n";
 
     ov::Shape output_tensor_shape = model_ptr->output().get_shape();
+    msg_ss << "Model Output Shape: " << output_tensor_shape << "\n";
+
     size_t batch_num=output_tensor_shape[0], res_height=output_tensor_shape[1], res_width=output_tensor_shape[2];
     auto output_tensor = infer_request.get_output_tensor();
     const float* output_buff = output_tensor.data<const float>();
@@ -167,9 +201,13 @@ DET_RES* doInferenceByImgMat(const cv::Mat& img_mat, void* compiled_model, const
         it->br_x = std::min(it->br_x, img_mat.cols);
         it->br_y = std::min(it->br_y, img_mat.rows);
         det_res[counter++] = *it;
+        cout << it->tl_x << " " << it->tl_y << " " << it->br_x << " " << it->br_y << " cls: " << it->cls << " conf: " << it->confidence << endl;
     }
-
+    msg_ss << "Detect Object Num: " << det_num << "\n";
+    msg_ss << "---- Inference Over ----\n";
+    strcpy_s(msg, 1024, msg_ss.str().c_str());
     return det_res;
+    // return nullptr;
 }
 
 char* resizeImageAsYOLO(ov::CompiledModel& compiled_model, const cv::Mat& org_img, cv::Mat& boarded_img, double& scale_ratio, int& left_padding, int& top_padding){
@@ -199,11 +237,68 @@ char* opencvMat2Tensor(cv::Mat& img_mat, ov::CompiledModel& compiled_model, ov::
     return "Convert Success";
 }
 
-DET_RES* doInferenceByImgPth(const char* img_pth, const int* roi, const int roi_len, void* model_ptr, const float score_threshold, const bool is_use_nms, size_t& det_num, char* msg){
+DET_RES* doInferenceByImgPth(const char* img_pth, void* model_ptr, const int* roi, const float score_threshold, const bool is_use_nms, size_t& det_num, char* msg){
     // 对三通道的图进行推理
-    cv::Mat img_org = cv::imread(img_pth);
-    cv::Mat img;
-    img_org(cv::Rect2i(0, 0, 100, 100));
+    cv::Mat org_img = cv::imread(img_pth, cv::IMREAD_COLOR);
+    cv::Mat img_part;
+    if(roi)
+        img_part = org_img(cv::Rect(cv::Point(roi[0], roi[1]), cv::Point(roi[2], roi[3])));
+    else
+        org_img.copyTo(img_part); 
 
-    return doInferenceByImgMat(img, model_ptr, score_threshold, is_use_nms, det_num, msg);
+    return doInferenceByImgMat(img_part, model_ptr, score_threshold, is_use_nms, det_num, msg);
+}
+
+void multiThreadInference(const cv::Mat& org_img, const int* roi, void* model_ptr, const float& score_threshold, const bool& is_use_nms, std::vector<DET_RES>* res_vec, std::mutex& mtx, char* msg){
+    // cout << "test threads" << endl;  // 只是打印信息 基础耗时 5ms/perThread
+    // TODO 可能会有roi异常  需要加异常处理
+    // cout << "roi:" << cv::Point(roi[0], roi[1]) << cv::Point(roi[2], roi[3]) << endl;
+    cv::Mat img_part = org_img(cv::Rect(cv::Point(roi[0], roi[1]), cv::Point(roi[2], roi[3])));
+    size_t det_num{0};
+    DET_RES* res = doInferenceByImgMat(img_part, model_ptr, score_threshold, is_use_nms, det_num, msg);
+    // for(int i=0; i<det_num; ++i){
+    //     std::lock_guard<std::mutex> lock(mtx);
+    //     res_vec->push_back(res[i]);
+    // }
+
+}
+
+
+DET_RES* doInferenceBy3chImgPatches(uchar* image_arr, const int height, const int width, const int patch_size, const int overlap_size, void* model_ptr, const float score_threshold, const bool is_use_nms, size_t& det_num, char* msg){
+    std::vector<std::array<int, 4> > roiList;
+    int x_end = 0, y_end = 0;
+    for(int y_start=0; y_start<height; y_start+=(patch_size-overlap_size)){
+        for(int x_start=0; x_start<width; x_start+=(patch_size-overlap_size)){
+            x_end = std::min({width, x_start+patch_size});
+            y_end = std::min(height, y_start+patch_size);
+            x_start = x_end - patch_size;
+            y_start = y_end - patch_size;
+            roiList.push_back({x_start, y_start, x_end, y_end});          
+
+            if(x_end == width) break;
+        }
+        if(y_end==height) break;
+    }
+
+    std::mutex mtx;
+    std::vector<DET_RES>* det_res_vec = new std::vector<DET_RES>();
+    std::vector<std::thread> threads;
+    cv::Mat org_img(cv::Size(width, height), CV_8UC3, image_arr);
+    cout << "Patch num: " << roiList.size() << endl;
+    for(const auto& roi:roiList){
+        threads.push_back(std::thread(multiThreadInference, std::ref(org_img), roi.data(), model_ptr, std::ref(score_threshold), std::ref(is_use_nms), det_res_vec, std::ref(mtx), msg));
+        // multiThreadInference(std::ref(org_img), roi.data(), model_ptr, std::ref(score_threshold), std::ref(is_use_nms), det_res_vec, std::ref(mtx), msg);
+    }
+    // threads.push_back(std::thread(multiThreadInference, org_img, roiList[0].data(), model_ptr, score_threshold, is_use_nms, det_res_vec, std::ref(mtx), msg));
+    // threads.push_back(std::thread(multiThreadInference, org_img, roiList[1].data(), model_ptr, score_threshold, is_use_nms, det_res_vec, std::ref(mtx), msg));
+    // threads.push_back(std::thread(multiThreadInference, org_img, roiList[2].data(), model_ptr, score_threshold, is_use_nms, det_res_vec, std::ref(mtx), msg));
+    // threads.push_back(std::thread(multiThreadInference, org_img, roiList[3].data(), model_ptr, score_threshold, is_use_nms, det_res_vec, std::ref(mtx), msg));
+    // threads.push_back(std::thread(multiThreadInference, org_img, roiList[4].data(), model_ptr, score_threshold, is_use_nms, det_res_vec, std::ref(mtx), msg));
+
+    for(auto& t:threads){
+        t.join();
+    }
+    det_num = det_res_vec->size();
+
+    return det_res_vec->data();
 }
