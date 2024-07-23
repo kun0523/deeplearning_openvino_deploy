@@ -1,6 +1,12 @@
 #include "inference.h"
 
+#define DEBUG
+
 void* initModel(const char* onnx_pth, char* msg, size_t msg_len){
+#ifdef DEBUG
+    std::fstream fs{"./debug_log.txt", std::ios_base::app};
+    fs << ov::get_openvino_version() << "\n";
+#endif
     std::stringstream msg_ss;
     msg_ss << "Call <initModel> Func\n";
     ov::Core core;
@@ -12,11 +18,18 @@ void* initModel(const char* onnx_pth, char* msg, size_t msg_len){
         auto version = core.get_versions(core.get_available_devices()[0]);
         for(auto& item:version){
             msg_ss << item.first << " : " << item.second << "\n";
+            #ifdef DEBUG
+                fs << item.first << " : " << item.second << "\n";
+            #endif
         }
     }catch(std::exception ex){
         msg_ss << "OpenVINO Error!\n";
         msg_ss << ex.what() << "\n";
         strcpy_s(msg, msg_len, msg_ss.str().c_str());
+        #ifdef DEBUG
+            fs << ex.what() << "\n";
+            fs.close();
+        #endif
         return compiled_model_ptr;
     }    
     
@@ -24,15 +37,26 @@ void* initModel(const char* onnx_pth, char* msg, size_t msg_len){
         // 创建模型
         compiled_model_ptr = new ov::CompiledModel(core.compile_model(onnx_pth, "CPU"));
         msg_ss << "Create Compiled Model Success. Got Model Pointer: " << compiled_model_ptr << "\n";
+        #ifdef DEBUG
+            fs << "Create Compiled Model Success. Got Model Pointer: " << compiled_model_ptr << "\n";            
+        #endif
     }catch(std::exception ex){
         msg_ss << "Create Model Failed\n";
         msg_ss << "Error Message: " << ex.what() << "\n";
 
         strcpy_s(msg, msg_len, msg_ss.str().c_str());
+        #ifdef DEBUG
+            fs << "Create Model Failed\n";
+            fs << "Error Message: " << ex.what() << "\n";
+            fs.close();
+        #endif
         return compiled_model_ptr;
     }
     
     strcpy_s(msg, msg_len, msg_ss.str().c_str());
+    #ifdef DEBUG
+        fs.close();
+    #endif
     return compiled_model_ptr;
 }
 
@@ -61,35 +85,57 @@ void warmUp(void* compiled_model, char* msg, size_t msg_len){
 }
 
 CLS_RES doInferenceByImgPth(const char* image_pth, void* compiled_model, const int* roi, char* msg, size_t msg_len){
-    
+#ifdef DEBUG
+    std::fstream fs{"./debug_log.txt", std::ios_base::app};
+    fs << "Got Image path: " << image_pth << "\n";
+#endif
     cv::Mat img = cv::imread(image_pth, cv::IMREAD_COLOR);
     cv::Mat img_part;
     if(roi)
         img_part = img(cv::Rect(cv::Point(roi[0], roi[1]), cv::Point(roi[2], roi[3])));
     else
         img.copyTo(img_part); 
-
+#ifdef DEBUG
+    fs << "ROI Image size: " << img_part.size << "\n";
+    fs.close();
+#endif
     return doInferenceByImgMat(img_part, compiled_model, msg, msg_len);
 }
 
 CLS_RES doInferenceBy3chImg(uchar* image_arr, const int height, const int width, void* compiled_model, char* msg, size_t msg_len){
-    
+#ifdef DEBUG
+    std::fstream fs{"./debug_log.txt", std::ios_base::app};
+    fs << "Got Image size: " << width << "x" << height << "\n";
+#endif
     cv::Mat img(cv::Size(width, height), CV_8UC3, image_arr);
+#ifdef DEBUG
+    fs << "Convert Image size: " << img.size << "\n";
+    fs.close();
+#endif
     return doInferenceByImgMat(img, compiled_model, msg, msg_len);
 }
 
 CLS_RES doInferenceByImgMat(const cv::Mat& img_mat, void* compiled_model, char* msg, size_t msg_len){
-
+#ifdef DEBUG
+    std::fstream fs{"./debug_log.txt", std::ios_base::app};
+#endif
     std::stringstream msg_ss;
     msg_ss << "Call <doInferenceByImgMat> Func\n";
         
     ov::CompiledModel* model_ptr = static_cast<ov::CompiledModel*>(compiled_model);
     if(model_ptr==nullptr){
         msg_ss << "Error, Got nullptr, Model pointer convert failed\n";
+        #ifdef DEBUG
+            fs << "Error, Got nullptr, Model pointer convert failed\n";
+            fs.close();
+        #endif
         return CLS_RES(-1, -1);
     }else{
         msg_ss << "Convert Model Pointer Success.\n";
         msg_ss << "Got Inference Model Pointer: " << model_ptr << "\n";                
+        #ifdef DEBUG
+            fs << "Got Inference Model Pointer: " << model_ptr << "\n";            
+        #endif
     }
     // 前提假设模型只有一个输入节点
     ov::Shape input_tensor_shape = model_ptr->input().get_shape();
@@ -122,14 +168,18 @@ CLS_RES doInferenceByImgMat(const cv::Mat& img_mat, void* compiled_model, char* 
     cv::minMaxLoc(m, 0, &max_score, 0, &max_pos);
     CLS_RES ret = CLS_RES(max_pos.y, max_score);
     msg_ss << "Max confidence: " << ret.confidence << " Max Class Index: " << ret.cls << "\n";
+    #ifdef DEBUG
+        fs << "Max confidence: " << ret.confidence << " Max Class Index: " << ret.cls << "\n";
+    #endif
 
     string t = getTimeNow();
     msg_ss << "[" << t << "]" << "---- Inference Over ----\n";
     strcpy_s(msg, msg_len, msg_ss.str().c_str());
 
-    // std::fstream fs{"./log.txt", std::ios_base::out};
-    // fs << msg_ss.str() << endl;
-    // fs.close();
+    #ifdef DEBUG
+        fs << "[" << t << "]" << "---- Inference Over ----\n";
+        fs.close();
+    #endif    
     return ret;
 }
 

@@ -14,6 +14,18 @@ using std::cout;
 using std::endl;
 using std::vector;
 
+struct InferInfo{
+    int id_;
+    size_t roi_left{0};
+    size_t roi_top{0};
+    double scale_ratio{1};
+    size_t left_padding{0};
+    size_t top_padding{0};
+    ov::InferRequest request;
+
+    InferInfo(int _id_, ov::InferRequest req, size_t roi_lt=0, size_t roi_tp=0, double scale_=1, size_t lpad_=0, size_t tpad_=0):id_(_id_), roi_left(roi_lt), roi_top(roi_tp), scale_ratio(scale_), left_padding(lpad_), top_padding(tpad_), request(req){}
+};
+
 
 struct DET_RES{
     int tl_x{-1};
@@ -78,6 +90,10 @@ MY_DLL DET_RES* doInferenceBy3chImg(uchar* image_arr, const int height, const in
 /// @param msg 
 /// @return
 MY_DLL DET_RES* doInferenceBy3chImgPatches(uchar* image_arr, const int height, const int width, const int patch_size, const int overlap_size, void* model_ptr, const float score_threshold, const bool is_use_nms, size_t& det_num, char* msg);
+
+
+MY_DLL void testAsync();
+
 
 void warmUp(void* model_ptr, char* msg);
 DET_RES* doInferenceByImgMat(const cv::Mat& img_mat, void* compiled_model, const float score_threshold, const bool is_use_nms, size_t& det_num, char* msg);
