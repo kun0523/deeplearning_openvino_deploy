@@ -1,8 +1,8 @@
 #include <iostream>
 #include "inference.h"
 
-#define CLS
-// #define DET 
+// #define CLS
+#define DET 
 // #define SEG 
 
 #ifdef CLS 
@@ -84,10 +84,10 @@ void testDetInfer(){
     // bool use_nms = true;
     // std::string img_pth = R"(E:\my_depoly\bin\test_images\det_cell_test3.jpg)";
 
-    string onnx_pth = R"(D:\share_dir\impression_detect\workdir\yolov10\dent_det\yolov10s_freeze8_use_sgd6\weights\best01.onnx)";
+    string onnx_pth = R"(D:\share_dir\repository_check\workdir_locMark_0807\vc_pack_mark\train_img320\weights\best01.onnx)";
     // string onnx_pth = R"(D:\share_dir\impression_detect\workdir\yolov10\dent_det\yolov10s_freeze8_use_sgd2\weights\best.onnx)";
-    bool use_nms = false;
-    std::string img_pth = R"(E:\ScanCodeData\Image\2024\07\test2\20240625_00001_B12_QRCODE=A742631729_7_17_C4_FW_A2FW1S4612AAI042_A2FW1S46GGJBC049-1.jpg)";
+    bool use_nms = true;
+    std::string img_pth = R"(E:\DataSets\vacuum_package\temp\tmp_save_1704445838.jpg)";
     // std::string img_pth = R"(E:\ScanCodeData\Image\2024\07\9.jpg)";
 
     // testAsync();
@@ -97,15 +97,15 @@ void testDetInfer(){
     void* model_ptr = initModel(onnx_pth.data(), msg);
     cout << msg << endl;
 
-    // // 接口 2：指定图片路径推理
-    // size_t det_num;
-    // auto start = std::chrono::high_resolution_clock::now();
-    // DET_RES* result2 = doInferenceByImgPth(img_pth.c_str(), model_ptr, nullptr, 0.5f, use_nms, det_num, msg);
-    // auto end = std::chrono::high_resolution_clock::now();
-    // std::chrono::duration<double, std::milli> spend = end -start;
-    // cout << msg << endl;
-    // cout << "Got Detection Res: " << result2[0].get_info() << endl;
-    // cout << "Cost: " << spend.count() << "ms" << endl;
+    // 接口 2：指定图片路径推理
+    size_t det_num;
+    auto start = std::chrono::high_resolution_clock::now();
+    DET_RES* result2 = doInferenceByImgPth(img_pth.c_str(), model_ptr, nullptr, 0.5f, use_nms, det_num, msg);
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::milli> spend = end -start;
+    cout << msg << endl;
+    cout << "Got Detection Res: " << result2[0].get_info() << endl;
+    cout << "Cost: " << spend.count() << "ms" << endl;
 
     // // 接口 3：传图片指针推理
     // cv::Mat img = cv::imread(img_pth);
@@ -116,20 +116,20 @@ void testDetInfer(){
     //     cout << res[i].get_info() << endl;
     // }
 
-    // 接口 4：图片分块多线程推理  单线程 1700+ms
-    auto tick = std::chrono::high_resolution_clock::now();
-    cv::Mat img_cell = cv::imread(img_pth);
-    size_t det_num{0};
-    int patch_size = 1000;
-    int overlap_size = 100;
-    DET_RES* res = doInferenceBy3chImgPatches(img_cell.data, img_cell.rows, img_cell.cols, patch_size, overlap_size, model_ptr, 0.5f, use_nms, det_num, msg);
-    auto tock = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double, std::milli> spend = tock-tick;
-    cout << "cost time: " << spend.count() << "ms" << endl;
-    for(int i =0; i<det_num; ++i){
-        cout << res[i].get_info() << endl;
-    }
-    cout << msg << endl;
+    // // 接口 4：图片分块多线程推理  单线程 1700+ms
+    // auto tick = std::chrono::high_resolution_clock::now();
+    // cv::Mat img_cell = cv::imread(img_pth);
+    // size_t det_num{0};
+    // int patch_size = 1000;
+    // int overlap_size = 100;
+    // DET_RES* res = doInferenceBy3chImgPatches(img_cell.data, img_cell.rows, img_cell.cols, patch_size, overlap_size, model_ptr, 0.5f, use_nms, det_num, msg);
+    // auto tock = std::chrono::high_resolution_clock::now();
+    // std::chrono::duration<double, std::milli> spend = tock-tick;
+    // cout << "cost time: " << spend.count() << "ms" << endl;
+    // for(int i =0; i<det_num; ++i){
+    //     cout << res[i].get_info() << endl;
+    // }
+    // cout << msg << endl;
 }
 #endif 
 
