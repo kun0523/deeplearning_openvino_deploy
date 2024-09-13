@@ -48,6 +48,15 @@ struct DET_RES{
     std::string get_info();
 };
 
+
+struct CLS_RES{
+    short cls{-1};
+    double confidence{-1};
+
+    CLS_RES(short cls_, double confidence_):cls(cls_), confidence(confidence_) {}
+};
+
+
 /// @brief 输入onnx模型文件路径 返回初始化完成的模型指针
 /// @param onnx_pth onnx模型文件路径字符串指针
 /// @param msg 消息字符数组，用于写入Log信息，默认数组长度1024
@@ -75,7 +84,17 @@ MY_DLL DET_RES* doInferenceByImgPth(const char* img_pth, void* model_ptr, const 
 /// @param det_num 返回检测到的目标数量
 /// @param msg 消息字符数组，用于写入信息 默认数组长度1024
 /// @return 返回 DET_RES 数组指针 包含多个检测结果
-MY_DLL DET_RES* doInferenceBy3chImg(uchar* image_arr, const int height, const int width, void* model_ptr, const float score_threshold, const bool is_use_nms, size_t& det_num, char* msg);
+MY_DLL DET_RES* doInferenceBy3chImg2(uchar* image_arr, const int height, const int width, void* model_ptr, const float score_threshold, const bool is_use_nms, size_t& det_num, char* msg);
+
+/// @brief 根据 图像指针+图像尺寸 进行目标检测  转换为分类结果
+/// @param image_arr 图像内存指针 OpenCV BGR 3通道图的指针
+/// @param height 图像高度
+/// @param width 图像宽度
+/// @param model_ptr OpenVINO 模型指针
+/// @param msg 消息字符数组，用于写入信息 默认数组长度1024
+/// @return 返回 CLS_RES 仅返回分类结果
+MY_DLL CLS_RES doInferenceBy3chImg(uchar* image_arr, const int height, const int width, void* compiled_model, char* msg, size_t msg_len=1024);
+
 
 /// @brief 在指定ROI区域后的图，尺寸依旧很大，可进行逐个小patch推理
 /// @param image_arr 

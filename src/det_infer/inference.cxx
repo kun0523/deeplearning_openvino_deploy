@@ -168,7 +168,8 @@ DET_RES* doInferenceByImgMat(const cv::Mat& img_mat, void* compiled_model, const
     double scale_ratio;
     int left_padding_cols, top_padding_rows;
     resizeImageAsYOLO(*model_ptr, img_mat, resized_img, scale_ratio, left_padding_cols, top_padding_rows);
-    cv::Mat blob_img = cv::dnn::blobFromImage(resized_img, 1.0/255.0, cv::Size(input_tensor_shape[2], input_tensor_shape[3]), 0.0, true, false, CV_32F);
+
+    cv::Mat blob_img = cv::dnn::blobFromImage(resized_img, 1.0/255.0, cv::Size(input_tensor_shape[3], input_tensor_shape[2]), 0.0, true, false, CV_32F);
     ov::Tensor inputensor;
     opencvMat2Tensor(blob_img, *model_ptr, inputensor);
     auto img_preprocess_done = std::chrono::high_resolution_clock::now();
@@ -208,7 +209,7 @@ DET_RES* doInferenceByImgMat(const cv::Mat& img_mat, void* compiled_model, const
 
 char* resizeImageAsYOLO(ov::CompiledModel& compiled_model, const cv::Mat& org_img, cv::Mat& boarded_img, double& scale_ratio, int& left_padding, int& top_padding){
     
-    double new_width = compiled_model.input().get_shape()[2], new_height = compiled_model.input().get_shape()[3];
+    double new_height = compiled_model.input().get_shape()[2], new_width = compiled_model.input().get_shape()[3];
     double org_width = org_img.cols, org_height = org_img.rows;
     scale_ratio = new_width/org_width > new_height/org_height ? new_height/org_height : new_width/org_width;
 
@@ -605,3 +606,26 @@ void testAsync(){
 }
 
 */
+
+CLS_RES doInferenceBy3chImg(uchar* image_arr, const int height, const int width, void* compiled_model, char* msg, size_t msg_len){
+    // 对三通道的图进行推理
+    CLS_RES cls_res(1, 0.9);
+
+    cv::Mat img(cv::Size(width, height), CV_8UC3, image_arr);
+    size_t det_num = 0;
+    DET_RES* det_res = doInferenceByImgMat(img, compiled_model, 0.3f, true, det_num, msg);
+    
+    if(det_num==0)
+        return cls_res;
+    
+    vector<DET_RES> det_vec;
+    for(int i=0; i<det_num; ++i){
+        det_vec.push_back(det_res[i]);
+    }
+
+    std::sort(det_vec.begin(), det_vec.end(), [](DET_RES det1, DET_RES det2){ return det1.confidence > det2.confidence; });
+
+    cls_res.cls = 0;
+    cls_res.confidence = det_vec[0].confidence;
+    return cls_res;
+}
