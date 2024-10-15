@@ -102,12 +102,14 @@ CLS_RES doInferenceByImgPth(const char* image_pth, void* compiled_model, const i
     return doInferenceByImgMat(img_part, compiled_model, msg, msg_len);
 }
 
-CLS_RES doInferenceBy3chImg(uchar* image_arr, const int height, const int width, void* compiled_model, char* msg, size_t msg_len){
+CLS_RES doInferenceBy3chImg(uchar* image_arr, const std::int32_t height, const std::int32_t width, void* compiled_model, char* msg, size_t msg_len){
 #ifdef DEBUG
     std::fstream fs{"./debug_log.txt", std::ios_base::app};
     fs << "Got Image size: " << width << "x" << height << "\n";
 #endif
     cv::Mat img(cv::Size(width, height), CV_8UC3, image_arr);
+    // cv::Mat img(cv::Size(200, 200), CV_8UC3, image_arr);
+
 #ifdef DEBUG
     fs << "Convert Image size: " << img.size << "\n";
     fs.close();
@@ -118,6 +120,7 @@ CLS_RES doInferenceBy3chImg(uchar* image_arr, const int height, const int width,
 CLS_RES doInferenceByImgMat(const cv::Mat& img_mat, void* compiled_model, char* msg, size_t msg_len){
 #ifdef DEBUG
     std::fstream fs{"./debug_log.txt", std::ios_base::app};
+    fs << "Call <doInferenceByImgMat> Func\n";
 #endif
     std::stringstream msg_ss;
     msg_ss << "Call <doInferenceByImgMat> Func\n";
@@ -140,13 +143,19 @@ CLS_RES doInferenceByImgMat(const cv::Mat& img_mat, void* compiled_model, char* 
     // 前提假设模型只有一个输入节点
     ov::Shape input_tensor_shape = model_ptr->input().get_shape();
     msg_ss << "Model Input Shape: " << input_tensor_shape << "\n";
+    #ifdef DEBUG
+        fs << "Model Input Shape: " << input_tensor_shape << "\n";          
+    #endif
 
     auto start = std::chrono::high_resolution_clock::now();
     cv::Mat blob_img = cv::dnn::blobFromImage(img_mat, 1.0/255.0, cv::Size(input_tensor_shape[2], input_tensor_shape[3]), 0.0, true, false, CV_32F);
     ov::Tensor inputensor;
     opencvMat2Tensor(blob_img, *model_ptr, inputensor);
     auto img_preprocess_done = std::chrono::high_resolution_clock::now();
-    
+    #ifdef DEBUG
+        fs << "Image Convert to Tensor success \n";          
+    #endif
+
     ov::InferRequest infer_request = model_ptr->create_infer_request();
     infer_request.set_input_tensor(inputensor);
     infer_request.infer();

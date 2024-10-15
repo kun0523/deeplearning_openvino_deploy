@@ -5,6 +5,7 @@
 #include <openvino/openvino.hpp>
 #include <opencv2/opencv.hpp>
 #include <fstream>
+#include <string>
 
 #define MY_DLL extern "C" __declspec(dllexport)
 
@@ -68,11 +69,11 @@ MY_DLL void* initModel(const char* onnx_pth, char* msg);
 /// @param model_ptr OpenVINO 模型指针
 /// @param roi 检查区域ROI 整型数组 [p1_x, p1_y, p2_x, p2_y]  ROI=nullptr时直接对全图推理
 /// @param score_threshold 置信度阈值 低于阈值的检测框不返回
-/// @param is_use_nms 是否使用非极大值抑制 去除重叠框
+/// @param model_type 指定使用的模型版本 v8 v10 v11
 /// @param det_num 返回检测到的目标数量
 /// @param msg 消息字符数组，用于写入信息 默认数组长度1024
 /// @return 返回 DET_RES 数组指针 包含多个检测结果
-MY_DLL DET_RES* doInferenceByImgPth(const char* img_pth, void* model_ptr, const int* roi, const float score_threshold, const bool is_use_nms, size_t& det_num, char* msg);
+MY_DLL DET_RES* doInferenceByImgPth(const char* img_pth, void* model_ptr, const int* roi, const float score_threshold, const short model_type, size_t& det_num, char* msg);
 
 /// @brief 根据 图像指针+图像尺寸 进行目标检测
 /// @param image_arr 图像内存指针 OpenCV BGR 3通道图的指针
@@ -80,11 +81,11 @@ MY_DLL DET_RES* doInferenceByImgPth(const char* img_pth, void* model_ptr, const 
 /// @param width 图像宽度
 /// @param model_ptr OpenVINO 模型指针
 /// @param score_threshold 置信度阈值 低于阈值的检测框不返回
-/// @param is_use_nms 是否使用非极大值抑制 去除重叠框
+/// @param model_type 指定使用的模型版本 v8 v10 v11
 /// @param det_num 返回检测到的目标数量
 /// @param msg 消息字符数组，用于写入信息 默认数组长度1024
 /// @return 返回 DET_RES 数组指针 包含多个检测结果
-MY_DLL DET_RES* doInferenceBy3chImg2(uchar* image_arr, const int height, const int width, void* model_ptr, const float score_threshold, const bool is_use_nms, size_t& det_num, char* msg);
+MY_DLL DET_RES* doInferenceBy3chImg(uchar* image_arr, const int height, const int width, void* model_ptr, const float score_threshold, const short model_type, size_t& det_num, char* msg);
 
 /// @brief 根据 图像指针+图像尺寸 进行目标检测  转换为分类结果
 /// @param image_arr 图像内存指针 OpenCV BGR 3通道图的指针
@@ -93,7 +94,7 @@ MY_DLL DET_RES* doInferenceBy3chImg2(uchar* image_arr, const int height, const i
 /// @param model_ptr OpenVINO 模型指针
 /// @param msg 消息字符数组，用于写入信息 默认数组长度1024
 /// @return 返回 CLS_RES 仅返回分类结果
-MY_DLL CLS_RES doInferenceBy3chImg(uchar* image_arr, const int height, const int width, void* compiled_model, char* msg, size_t msg_len=1024);
+MY_DLL CLS_RES doInferenceBy3chImgCls(uchar* image_arr, const int height, const int width, void* compiled_model, char* msg, size_t msg_len=1024);
 
 
 /// @brief 在指定ROI区域后的图，尺寸依旧很大，可进行逐个小patch推理
@@ -104,17 +105,17 @@ MY_DLL CLS_RES doInferenceBy3chImg(uchar* image_arr, const int height, const int
 /// @param overlap_size 
 /// @param model_ptr 
 /// @param score_threshold 
-/// @param is_use_nms 
+/// @param model_type 指定使用的模型版本 v8 v10 v11 
 /// @param det_num 
 /// @param msg 
 /// @return
-MY_DLL DET_RES* doInferenceBy3chImgPatches(uchar* image_arr, const int height, const int width, const int patch_size, const int overlap_size, void* model_ptr, const float score_threshold, const bool is_use_nms, size_t& det_num, char* msg);
+MY_DLL DET_RES* doInferenceBy3chImgPatches(uchar* image_arr, const int height, const int width, const int patch_size, const int overlap_size, void* model_ptr, const float score_threshold, const short model_type, size_t& det_num, char* msg);
 
 
 MY_DLL void testAsync();
 
 
 void warmUp(void* model_ptr, char* msg);
-DET_RES* doInferenceByImgMat(const cv::Mat& img_mat, void* compiled_model, const float score_threshold, const bool is_use_nms, size_t& det_num, char* msg);
+DET_RES* doInferenceByImgMat(const cv::Mat& img_mat, void* compiled_model, const float score_threshold, const short model_type, size_t& det_num, char* msg);
 char* resizeImageAsYOLO(ov::CompiledModel& compiled_model, const cv::Mat& org_img, cv::Mat& boarded_img, double& scale_ratio, int& left_padding, int& top_padding);
 char* opencvMat2Tensor(cv::Mat& img_mat, ov::CompiledModel& compiled_model, ov::Tensor& out_tensor);

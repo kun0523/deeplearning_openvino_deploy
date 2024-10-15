@@ -44,6 +44,9 @@ void* initModel(const char* onnx_pth, char* msg){
         // ov::set_batch(model, 5);
         // cout << model->input().get_shape() << endl;
 
+        // auto tmp_model = core.read_model(onnx_pth);
+        // auto compiled_model = core.compile_model(tmp_model, "CPU");
+
         compiled_model_ptr = new ov::CompiledModel(core.compile_model(onnx_pth, "CPU"));
         // compiled_model_ptr->set_property(ov::inference_num_threads(20));        
         cout << "inference thread: " << compiled_model_ptr->get_property(ov::inference_num_threads) << std::endl;
@@ -71,7 +74,7 @@ void warmUp(void* model_ptr, char* msg){
         msg_ss << "WarmUp Model Pointer: " << model_ptr << "\n";        
         cv::Mat blob_img = cv::Mat::ones(cv::Size(1024, 1024), CV_32FC3);
         size_t det_num;
-        doInferenceByImgMat(blob_img, model_ptr, 0.5f, true, det_num, msg);
+        doInferenceByImgMat(blob_img, model_ptr, 0.5f, 8, det_num, msg);
         msg_ss << msg;
         msg_ss << "WarmUp Complete.";
     }catch(std::exception ex){
@@ -82,46 +85,75 @@ void warmUp(void* model_ptr, char* msg){
     strcpy_s(msg, 1024, msg_ss.str().c_str());
 }
 
-char* postProcess(const float conf_threshold, cv::Mat& det_result_mat, const double scale_ratio_, const int left_padding, const int top_padding, bool do_nms, std::vector<DET_RES>& out_vec){
-    if (do_nms)
-        det_result_mat = det_result_mat.t();    
-    size_t pred_num = det_result_mat.size().width;
+/*
+#TODO: 为什么一会中心 一会角点？？？
+预测结果数据解析
+yolov8
+- result  batch_num*[tlx, tly, brx, bry, cls_num]*bbox_num
+
+yolov10
+- result  batch_num*[tlx, tly, brx, bry, cls_num-1]*bbox_num
+
+yolov11
+- model: D:\share_dir\impression_detect\workdir\yolov11\det_dent_gold_scf\yolov11m_sgd\weights\yolov11m_1.onnx
+- image:  E:\DataSets\dents_det\org_D1\gold_scf\yolo\images\train\5_4187.jpg
+- result:  batch_num*[center_x, center_y, weight, height, cls_num-1]*bbox_num 
+
+*/
+char* postProcess(const float conf_threshold, cv::Mat& det_result_mat, const double scale_ratio_, const int left_padding, const int top_padding, short model_type, std::vector<DET_RES>& out_vec){
+
+    if(model_type!=8 && model_type!=10 && model_type != 11){
+        throw std::runtime_error("Error Model Type " + std::to_string(model_type) + " Only support Model Type: v8 v10 v11.");
+    }
+
+    det_result_mat = det_result_mat.t();    
+    size_t pred_num = det_result_mat.cols;
 
     vector<cv::Rect2d> boxes;
     vector<float> scores;
     vector<int> indices;
     vector<int> class_idx;
-    if(do_nms){
-        for(int row=0; row<det_result_mat.size[0]; ++row){
-            const float* ptr = det_result_mat.ptr<float>(row);
-            float tl_x = ptr[0], tl_y = ptr[1], br_x=ptr[2], br_y=ptr[3];
-            // float cx = ptr[0], cy = ptr[1], w=ptr[2], h=ptr[3];  // 不清楚什么时候接口变了，直接返回对角坐标
-            vector<float> cls_conf = vector<float>(ptr+4, ptr+pred_num);
-            cv::Point2i maxP;
-            double maxV;
-            cv::minMaxLoc(cls_conf, 0, &maxV, 0, &maxP);
-            // boxes.emplace_back(cx-w/2, cy-h/2, w, h);
+    float tl_x{}, tl_y{}, br_x{}, br_y{}, cx{}, cy{}, w{}, h{}, iou_threshold{0.5f};
+
+    for(int row=0; row<det_result_mat.rows; ++row){
+        const float* ptr = det_result_mat.ptr<float>(row);
+        vector<float> cls_conf = vector<float>(ptr+4, ptr+pred_num);
+        cv::Point2i maxP;
+        double maxV;
+        cv::minMaxLoc(cls_conf, 0, &maxV, 0, &maxP);
+        if (maxV<0.1) continue;
+
+        switch (model_type)
+        {
+        case 8:
+        case 10:
+            // 模型输出是 角点坐标
+            tl_x = ptr[0], tl_y = ptr[1], br_x=ptr[2], br_y=ptr[3];
             boxes.emplace_back(tl_x, tl_y, br_x-tl_x, br_y-tl_y);
-            scores.push_back(static_cast<float>(maxV));
-            class_idx.push_back(maxP.x);
+            break;        
+
+        case 11:
+            // 模型输出是 中心点 + 宽高
+            cx = ptr[0], cy = ptr[1], w=ptr[2], h=ptr[3];  // 不清楚什么时候接口变了，直接返回对角坐标
+            boxes.emplace_back(cx-w/2, cy-h/2, w, h);
+            break;
         }
-        float iou_threshold = 0.5;
-        cv::dnn::NMSBoxes(boxes, scores, conf_threshold, iou_threshold, indices);
-    }else{
-        for(int row=0; row<det_result_mat.size[0]; ++row){
-            const float* ptr = det_result_mat.ptr<float>(row);
-            float tl_x = ptr[0], tl_y = ptr[1], br_x=ptr[2], br_y=ptr[3];
-            vector<float> cls_conf = vector<float>(ptr+4, ptr+pred_num);
-            cv::Point2i maxP;
-            double maxV;
-            cv::minMaxLoc(cls_conf, 0, &maxV, 0, &maxP);
-            boxes.emplace_back(tl_x, tl_y, br_x-tl_x, br_y-tl_y);
-            scores.push_back(static_cast<float>(maxV));
-            class_idx.push_back(maxP.x);
-        }
-        indices = vector<int>(boxes.size());
-        std::iota(indices.begin(), indices.end(), 0);
+        scores.push_back(static_cast<float>(maxV));
+        class_idx.push_back(maxP.x);
     }
+
+    switch(model_type){
+        case 8:
+        case 11:
+            cv::dnn::NMSBoxes(boxes, scores, conf_threshold, iou_threshold, indices);
+            break;
+
+        case 10:
+            indices = vector<int>(boxes.size());
+            std::iota(indices.begin(), indices.end(), 0);
+            break;
+    }
+           
 
     for(auto it=indices.begin(); it!=indices.end(); ++it){
         float score = scores[*it];
@@ -140,13 +172,13 @@ char* postProcess(const float conf_threshold, cv::Mat& det_result_mat, const dou
     return "Post Process Complete.";
 }
 
-DET_RES* doInferenceBy3chImg(uchar* image_arr, const int height, const int width, void* model_ptr, const float score_threshold, const bool is_use_nms, size_t& det_num, char* msg){
+DET_RES* doInferenceBy3chImg(uchar* image_arr, const int height, const int width, void* model_ptr, const float score_threshold, const short model_type, size_t& det_num, char* msg){
     // 对三通道的图进行推理
     cv::Mat img(cv::Size(width, height), CV_8UC3, image_arr);
-    return doInferenceByImgMat(img, model_ptr, score_threshold, is_use_nms, det_num, msg);
+    return doInferenceByImgMat(img, model_ptr, score_threshold, model_type, det_num, msg);
 }
 
-DET_RES* doInferenceByImgMat(const cv::Mat& img_mat, void* compiled_model, const float score_threshold, const bool is_use_nms, size_t& det_num, char* msg){
+DET_RES* doInferenceByImgMat(const cv::Mat& img_mat, void* compiled_model, const float score_threshold, const short model_type, size_t& det_num, char* msg){
 
     std::stringstream msg_ss;
     msg_ss << "Call <doInferenceByImgMat> Func\n";
@@ -188,8 +220,8 @@ DET_RES* doInferenceByImgMat(const cv::Mat& img_mat, void* compiled_model, const
     cv::Mat m = cv::Mat(cv::Size(res_width, res_height), CV_32F, const_cast<float*>(output_buff));
 
     vector<DET_RES> out_res_vec;
-    // YOLOV10 需要指定 false  YOLOV8 指定 true；
-    postProcess(score_threshold, m, scale_ratio, left_padding_cols, top_padding_rows, is_use_nms, out_res_vec);
+    // YOLOV10 需要指定 false  YOLOV8 v11 指定 true；
+    postProcess(score_threshold, m, scale_ratio, left_padding_cols, top_padding_rows, model_type, out_res_vec);
     DET_RES* det_res = new DET_RES[out_res_vec.size()];
     det_num = out_res_vec.size();
     int counter = 0;
@@ -234,7 +266,7 @@ char* opencvMat2Tensor(cv::Mat& img_mat, ov::CompiledModel& compiled_model, ov::
     return "Convert Success";
 }
 
-DET_RES* doInferenceByImgPth(const char* img_pth, void* model_ptr, const int* roi, const float score_threshold, const bool is_use_nms, size_t& det_num, char* msg){
+DET_RES* doInferenceByImgPth(const char* img_pth, void* model_ptr, const int* roi, const float score_threshold, const short model_type, size_t& det_num, char* msg){
     // 对三通道的图进行推理
     cv::Mat org_img = cv::imread(img_pth, cv::IMREAD_COLOR);
     cv::Mat img_part;
@@ -243,7 +275,7 @@ DET_RES* doInferenceByImgPth(const char* img_pth, void* model_ptr, const int* ro
     else
         org_img.copyTo(img_part); 
 
-    return doInferenceByImgMat(img_part, model_ptr, score_threshold, is_use_nms, det_num, msg);
+    return doInferenceByImgMat(img_part, model_ptr, score_threshold, model_type, det_num, msg);
 }
 
 cv::Mat preProcess(cv::Mat& img, ov::CompiledModel* model_ptr, InferInfo& infer_info){
@@ -334,7 +366,7 @@ char* postProcess2(const float conf_threshold, cv::Mat& det_result_mat, const In
     return "Post Process Complete.";
 }
 
-DET_RES* doInferenceBy3chImgPatches(uchar* image_arr, const int height, const int width, const int patch_size, const int overlap_size, void* model_ptr, const float score_threshold, const bool is_use_nms, size_t& det_num, char* msg){
+DET_RES* doInferenceBy3chImgPatches(uchar* image_arr, const int height, const int width, const int patch_size, const int overlap_size, void* model_ptr, const float score_threshold, const short model_type, size_t& det_num, char* msg){
     std::vector<std::array<int, 4> > roiList;
     int x_end = 0, y_end = 0;
     for(int y_start=0; y_start<height; y_start+=(patch_size-overlap_size)){
@@ -607,7 +639,7 @@ void testAsync(){
 
 */
 
-CLS_RES doInferenceBy3chImg(uchar* image_arr, const int height, const int width, void* compiled_model, char* msg, size_t msg_len){
+CLS_RES doInferenceBy3chImg2(uchar* image_arr, const int height, const int width, void* compiled_model, char* msg, size_t msg_len){
     // 对三通道的图进行推理
     CLS_RES cls_res(1, 0.9);
 
