@@ -16,11 +16,11 @@ std::string DET_RES::get_info(){
 }
 
 void* initModel(const char* onnx_pth, char* msg){
+    // TODO: 怎么做多batch 推理？？？
     std::stringstream msg_ss;
     msg_ss << "Call <initModel> Func\n";
     ov::Core core;  
     ov::CompiledModel* compiled_model_ptr = nullptr;  
-    // TODO: 怎么做多batch 推理？？？
 
     try{   
         // 验证openvino环境是否正确     
@@ -32,73 +32,78 @@ void* initModel(const char* onnx_pth, char* msg){
     }catch(std::exception ex){
         msg_ss << "OpenVINO Error!\n";
         msg_ss << ex.what() << "\n";
-        strcpy_s(msg, 1024, msg_ss.str().c_str());
+        strcpy_s(msg, msg_ss.str().length()+1, msg_ss.str().c_str());
         return compiled_model_ptr;
     }   
 
     try{      
-        
-        // 创建模型  read model 可以设置精度 
-        // std::shared_ptr<ov::Model> model = core.read_model(onnx_pth);
-        // model->get_parameters()[0]->set_layout("NCHW");
-        // ov::set_batch(model, 5);
-        // cout << model->input().get_shape() << endl;
-
-        // auto tmp_model = core.read_model(onnx_pth);
-        // auto compiled_model = core.compile_model(tmp_model, "CPU");
-
-        compiled_model_ptr = new ov::CompiledModel(core.compile_model(onnx_pth, "CPU"));
-        // compiled_model_ptr->set_property(ov::inference_num_threads(20));        
-        cout << "inference thread: " << compiled_model_ptr->get_property(ov::inference_num_threads) << std::endl;
+        compiled_model_ptr = new ov::CompiledModel(core.compile_model(onnx_pth, "CPU"));                       
         msg_ss << "Create Compiled model Success. Got Model Pointer: " << compiled_model_ptr << "\n";
     }catch(std::exception ex){
         msg_ss << "Create Model Failed\n";
         msg_ss << "Error Message: " << ex.what() << "\n";
 
-        strcpy_s(msg, 1024, msg_ss.str().c_str());
+        strcpy_s(msg, msg_ss.str().length()+1, msg_ss.str().c_str());
         return compiled_model_ptr;
     }
 
-    warmUp(compiled_model_ptr, msg); 
-    msg_ss << msg; 
-    strcpy_s(msg, 1024, msg_ss.str().c_str());
+    warmUp(compiled_model_ptr, msg_ss); 
+    strcpy_s(msg, msg_ss.str().length()+1, msg_ss.str().c_str());
     return compiled_model_ptr;
 }
 
-void warmUp(void* model_ptr, char* msg){
-    cout << "msg init: " << msg << endl;
-    std::stringstream msg_ss;
-    msg_ss << "Call <warmUp> Func ...\n";
+void warmUp(void* model_ptr, std::stringstream& msg_ss_){
+    msg_ss_ << "Call <warmUp> Func ...\n";
+    char msg[1024]{};
 
     try{
-        msg_ss << "WarmUp Model Pointer: " << model_ptr << "\n";        
+        msg_ss_ << "WarmUp Model Pointer: " << model_ptr << "\n";        
         cv::Mat blob_img = cv::Mat::ones(cv::Size(1024, 1024), CV_32FC3);
         size_t det_num;
         doInferenceByImgMat(blob_img, model_ptr, 0.5f, 8, det_num, msg);
-        msg_ss << msg;
-        msg_ss << "WarmUp Complete.";
+        msg_ss_ << msg;
+        msg_ss_ << "WarmUp Complete.";
     }catch(std::exception ex){
-        msg_ss << "Catch Error in Warmup Func\n";
-        msg_ss << "Error Message: " << ex.what() << endl;
+        msg_ss_ << "Catch Error in Warmup Func\n";
+        msg_ss_ << "Error Message: " << ex.what() << endl;
     }
+}
 
-    strcpy_s(msg, 1024, msg_ss.str().c_str());
+cv::Mat preProcess(cv::Mat& img, ov::CompiledModel* model_ptr, InferInfo& infer_info){
+    size_t input_width = model_ptr->input().get_shape()[2];
+    size_t input_height = model_ptr->input().get_shape()[3];
+    double org_width = img.cols, org_height = img.rows;
+    infer_info.scale_ratio = input_width/org_width > input_height/org_height ? input_height/org_height : input_width/org_width;
+
+    cv::Mat resized_img;
+    cv::resize(img, resized_img, cv::Size(), infer_info.scale_ratio, infer_info.scale_ratio, cv::INTER_LINEAR);
+
+    double dw = input_width - resized_img.cols;
+    double dh = input_height - resized_img.rows;
+
+    infer_info.left_padding = static_cast<int>(dw/2);
+    infer_info.top_padding = static_cast<int>(dh/2);
+    int right_padding = static_cast<int>(dw) - infer_info.left_padding;
+    int bottom_padding = static_cast<int>(dh) - infer_info.top_padding;
+    cv::Mat boarded_img;
+    cv::copyMakeBorder(resized_img, boarded_img, infer_info.top_padding, bottom_padding, infer_info.left_padding, right_padding, cv::BORDER_CONSTANT, cv::Scalar(114,114,114));
+    
+    return boarded_img;
 }
 
 /*
-#TODO: 为什么一会中心 一会角点？？？
-预测结果数据解析
+模型推理结果解析，因为不同版本输出结果有差异
 yolov8
+- 需要NMS
 - result  batch_num*[tlx, tly, brx, bry, cls_num]*bbox_num
 
 yolov10
-- result  batch_num*[tlx, tly, brx, bry, cls_num-1]*bbox_num
+- 不需要NMS  后处理不需要转置
+- result  batch_num*bbox_num*[tlx, tly, brx, bry, cls_num]
 
 yolov11
-- model: D:\share_dir\impression_detect\workdir\yolov11\det_dent_gold_scf\yolov11m_sgd\weights\yolov11m_1.onnx
-- image:  E:\DataSets\dents_det\org_D1\gold_scf\yolo\images\train\5_4187.jpg
-- result:  batch_num*[center_x, center_y, weight, height, cls_num-1]*bbox_num 
-
+- 需要NMS
+- result:  batch_num*[center_x, center_y, weight, height, cls_num]*bbox_num 
 */
 char* postProcess(const float conf_threshold, cv::Mat& det_result_mat, const double scale_ratio_, const int left_padding, const int top_padding, short model_type, std::vector<DET_RES>& out_vec){
 
@@ -106,7 +111,8 @@ char* postProcess(const float conf_threshold, cv::Mat& det_result_mat, const dou
         throw std::runtime_error("Error Model Type " + std::to_string(model_type) + " Only support Model Type: v8 v10 v11.");
     }
 
-    det_result_mat = det_result_mat.t();    
+    if(model_type!=10)
+        det_result_mat = det_result_mat.t();    
     size_t pred_num = det_result_mat.cols;
 
     vector<cv::Rect2d> boxes;
@@ -121,20 +127,20 @@ char* postProcess(const float conf_threshold, cv::Mat& det_result_mat, const dou
         cv::Point2i maxP;
         double maxV;
         cv::minMaxLoc(cls_conf, 0, &maxV, 0, &maxP);
-        if (maxV<0.1) continue;
+        if (maxV<0.1) continue;  // 置信度非常低的直接跳过
 
         switch (model_type)
         {
         case 8:
         case 10:
-            // 模型输出是 角点坐标
+            // 模型输出是 两个角点坐标
             tl_x = ptr[0], tl_y = ptr[1], br_x=ptr[2], br_y=ptr[3];
             boxes.emplace_back(tl_x, tl_y, br_x-tl_x, br_y-tl_y);
             break;        
 
         case 11:
             // 模型输出是 中心点 + 宽高
-            cx = ptr[0], cy = ptr[1], w=ptr[2], h=ptr[3];  // 不清楚什么时候接口变了，直接返回对角坐标
+            cx = ptr[0], cy = ptr[1], w=ptr[2], h=ptr[3];  // 还不清楚是框架的问题还是有地方可以控制
             boxes.emplace_back(cx-w/2, cy-h/2, w, h);
             break;
         }
@@ -145,15 +151,16 @@ char* postProcess(const float conf_threshold, cv::Mat& det_result_mat, const dou
     switch(model_type){
         case 8:
         case 11:
+            // 使用NMS过滤重复框
             cv::dnn::NMSBoxes(boxes, scores, conf_threshold, iou_threshold, indices);
             break;
 
         case 10:
+            // 不需要使用NMS过滤
             indices = vector<int>(boxes.size());
             std::iota(indices.begin(), indices.end(), 0);
             break;
-    }
-           
+    }           
 
     for(auto it=indices.begin(); it!=indices.end(); ++it){
         float score = scores[*it];
@@ -235,7 +242,7 @@ DET_RES* doInferenceByImgMat(const cv::Mat& img_mat, void* compiled_model, const
     }
     msg_ss << "Detect Object Num: " << det_num << "\n";
     msg_ss << "---- Inference Over ----\n";
-    strcpy_s(msg, 1024, msg_ss.str().c_str());
+    strcpy_s(msg, msg_ss.str().length()+1, msg_ss.str().c_str());
     return det_res;
 }
 
@@ -276,388 +283,4 @@ DET_RES* doInferenceByImgPth(const char* img_pth, void* model_ptr, const int* ro
         org_img.copyTo(img_part); 
 
     return doInferenceByImgMat(img_part, model_ptr, score_threshold, model_type, det_num, msg);
-}
-
-cv::Mat preProcess(cv::Mat& img, ov::CompiledModel* model_ptr, InferInfo& infer_info){
-    size_t input_width = model_ptr->input().get_shape()[2];
-    size_t input_height = model_ptr->input().get_shape()[3];
-    double org_width = img.cols, org_height = img.rows;
-    infer_info.scale_ratio = input_width/org_width > input_height/org_height ? input_height/org_height : input_width/org_width;
-
-    cv::Mat resized_img;
-    cv::resize(img, resized_img, cv::Size(), infer_info.scale_ratio, infer_info.scale_ratio, cv::INTER_LINEAR);
-
-    double dw = input_width - resized_img.cols;
-    double dh = input_height - resized_img.rows;
-
-    infer_info.left_padding = static_cast<int>(dw/2);
-    infer_info.top_padding = static_cast<int>(dh/2);
-    int right_padding = static_cast<int>(dw) - infer_info.left_padding;
-    int bottom_padding = static_cast<int>(dh) - infer_info.top_padding;
-    cv::Mat boarded_img;
-    cv::copyMakeBorder(resized_img, boarded_img, infer_info.top_padding, bottom_padding, infer_info.left_padding, right_padding, cv::BORDER_CONSTANT, cv::Scalar(114,114,114));
-
-    // 将处理好的图片
-    // cv::Mat res_mat = cv::dnn::blobFromImage(boarded_img, 1.0/255.0, cv::Size(input_width, input_height), 0.0, true, false, CV_32F);
-    // res_mat.copyTo(processed_mat);
-    // auto input_port = model_ptr->input();
-    // ov::Tensor input_tensor = ov::Tensor(input_port.get_element_type(), input_port.get_shape(), processed_mat.ptr());
-    // return input_tensor;
-    return boarded_img;
-}
-
-char* postProcess2(const float conf_threshold, cv::Mat& det_result_mat, const InferInfo& infer_info_, bool do_nms, std::vector<DET_RES>& out_vec){
-    if (do_nms)
-        det_result_mat = det_result_mat.t();    
-    size_t pred_num = det_result_mat.size().width;
-
-    vector<cv::Rect2d> boxes;
-    vector<float> scores;
-    vector<int> indices;
-    vector<int> class_idx;
-    if(do_nms){
-        for(int row=0; row<det_result_mat.size[0]; ++row){
-            const float* ptr = det_result_mat.ptr<float>(row);
-            float tl_x = ptr[0], tl_y = ptr[1], br_x=ptr[2], br_y=ptr[3];
-            // float cx = ptr[0], cy = ptr[1], w=ptr[2], h=ptr[3];  // 不清楚什么时候接口变了，直接返回对角坐标
-            vector<float> cls_conf = vector<float>(ptr+4, ptr+pred_num);
-            cv::Point2i maxP;
-            double maxV;
-            cv::minMaxLoc(cls_conf, 0, &maxV, 0, &maxP);
-            // boxes.emplace_back(cx-w/2, cy-h/2, w, h);
-            boxes.emplace_back(tl_x, tl_y, br_x-tl_x, br_y-tl_y);
-            scores.push_back(static_cast<float>(maxV));
-            class_idx.push_back(maxP.x);
-        }
-        float iou_threshold = 0.5;
-        cv::dnn::NMSBoxes(boxes, scores, conf_threshold, iou_threshold, indices);
-    }else{
-        for(int row=0; row<det_result_mat.size[0]; ++row){
-            const float* ptr = det_result_mat.ptr<float>(row);
-            float tl_x = ptr[0], tl_y = ptr[1], br_x=ptr[2], br_y=ptr[3];
-            vector<float> cls_conf = vector<float>(ptr+4, ptr+pred_num);
-            cv::Point2i maxP;
-            double maxV;
-            cv::minMaxLoc(cls_conf, 0, &maxV, 0, &maxP);
-            boxes.emplace_back(tl_x, tl_y, br_x-tl_x, br_y-tl_y);
-            scores.push_back(static_cast<float>(maxV));
-            class_idx.push_back(maxP.x);
-        }
-        indices = vector<int>(boxes.size());
-        std::iota(indices.begin(), indices.end(), 0);
-    }
-
-    for(auto it=indices.begin(); it!=indices.end(); ++it){
-        float score = scores[*it];
-        if (score < conf_threshold) continue;
-        int cls = class_idx[*it];
-        cv::Rect2d tmp = boxes[*it];
-        tmp.x -= infer_info_.left_padding;
-        tmp.x /= infer_info_.scale_ratio;
-        tmp.x += infer_info_.roi_left;
-        tmp.y -= infer_info_.top_padding;
-        tmp.y /= infer_info_.scale_ratio;
-        tmp.y += infer_info_.roi_top;
-        tmp.width /= infer_info_.scale_ratio;
-        tmp.height /= infer_info_.scale_ratio;
-        out_vec.emplace_back(tmp, cls, score);     
-    }
-
-    return "Post Process Complete.";
-}
-
-DET_RES* doInferenceBy3chImgPatches(uchar* image_arr, const int height, const int width, const int patch_size, const int overlap_size, void* model_ptr, const float score_threshold, const short model_type, size_t& det_num, char* msg){
-    std::vector<std::array<int, 4> > roiList;
-    int x_end = 0, y_end = 0;
-    for(int y_start=0; y_start<height; y_start+=(patch_size-overlap_size)){
-        for(int x_start=0; x_start<width; x_start+=(patch_size-overlap_size)){
-            x_end = std::min({width, x_start+patch_size});
-            y_end = std::min(height, y_start+patch_size);
-            x_start = x_end - patch_size;
-            y_start = y_end - patch_size;
-            roiList.push_back({x_start, y_start, x_end, y_end});          
-
-            if(x_end == width) break;
-        }
-        if(y_end==height) break;
-    }
-
-    vector<DET_RES>* det_res_vec = new std::vector<DET_RES>();
-    ov::CompiledModel* cmodel_ptr = static_cast<ov::CompiledModel*>(model_ptr);
-    std::vector<InferInfo> infer_infos = {InferInfo(1, cmodel_ptr->create_infer_request()), InferInfo(2, cmodel_ptr->create_infer_request())};
-
-    cv::Mat org_img(cv::Size(width, height), CV_8UC3, image_arr);
-    cout << "Patch num: " << roiList.size() << endl;
-    auto start = std::chrono::high_resolution_clock::now();
-    
-    ov::Shape output_tensor_shape = cmodel_ptr->output().get_shape();
-    size_t batch_num=output_tensor_shape[0], res_height=output_tensor_shape[1], res_width=output_tensor_shape[2];
-
-    // cv::Mat patch = org_img(cv::Rect(cv::Point(roiList[0][0], roiList[0][1]), cv::Point(roiList[0][2], roiList[0][3])));
-    // infer_infos[0].roi_left = roiList[0][0];
-    // infer_infos[0].roi_top = roiList[0][1];
-    // cv::Mat processed_mat = preProcess(patch, cmodel_ptr, infer_infos[0]);   
-    // // TODO 后续要把这一步封装到preProcess中
-    // processed_mat = cv::dnn::blobFromImage(processed_mat, 1.0/255.0, cv::Size(640, 640), 0.0, true, false, CV_32F);
-    // auto input_port = cmodel_ptr->input();
-    // ov::Tensor input_tensor = ov::Tensor(input_port.get_element_type(), input_port.get_shape(), processed_mat.ptr());
-    // infer_infos[0].request.set_input_tensor(input_tensor);
-    // infer_infos[0].request.start_async();
-
-    for (int i=1; i<roiList.size(); ++i){
-
-        cv::Mat patch = org_img(cv::Rect(cv::Point(roiList[i][0], roiList[i][1]), cv::Point(roiList[i][2], roiList[i][3])));
-        // infer_infos[1].roi_left = roiList[i][0];
-        // infer_infos[1].roi_top = roiList[i][1];
-        // cv::Mat processed_mat = preProcess(patch, cmodel_ptr, infer_infos[1]);   
-        // // TODO 后续要把这一步封装到preProcess中
-        // processed_mat = cv::dnn::blobFromImage(processed_mat, 1.0/255.0, cv::Size(640, 640), 0.0, true, false, CV_32F);
-        // auto input_port = cmodel_ptr->input();
-        // ov::Tensor input_tensor = ov::Tensor(input_port.get_element_type(), input_port.get_shape(), processed_mat.ptr());
-        // infer_infos[1].request.set_input_tensor(input_tensor);
-        // infer_infos[1].request.start_async();
-
-        cv::Mat processed_mat = preProcess(patch, cmodel_ptr, infer_infos[0]);   
-        // TODO 后续要把这一步封装到preProcess中
-        processed_mat = cv::dnn::blobFromImage(processed_mat, 1.0/255.0, cv::Size(640, 640), 0.0, true, false, CV_32F);
-        auto input_port = cmodel_ptr->input();
-        ov::Tensor input_tensor = ov::Tensor(input_port.get_element_type(), input_port.get_shape(), processed_mat.ptr());
-        infer_infos[0].request.set_input_tensor(input_tensor);
-        infer_infos[0].request.start_async();
-
-        infer_infos[0].request.wait();
-        // cout << "Now Process request id: " << infer_infos[0].id_ << endl;
-        std::this_thread::sleep_for(std::chrono::duration<double, std::milli>(2));
-        auto output_tensor = infer_infos[0].request.get_output_tensor();
-        const float* output_buff = output_tensor.data<const float>();
-        cv::Mat m = cv::Mat(cv::Size(res_width, res_height), CV_32F, const_cast<float*>(output_buff));
-        // YOLOV10 需要指定 false  YOLOV8 指定 true；
-        postProcess2(0.5f, m, infer_infos[0], false, *det_res_vec);
-
-        // std::swap(infer_infos[0], infer_infos[1]);
-    }
-    // infer_infos[0].request.wait();
-    // // cout << "Now Process request id: " << infer_infos[0].id_ << endl;
-    // auto output_tensor = infer_infos[0].request.get_output_tensor();
-    // const float* output_buff = output_tensor.data<const float>();
-    // cv::Mat m = cv::Mat(cv::Size(res_width, res_height), CV_32F, const_cast<float*>(output_buff));
-    // // YOLOV10 需要指定 false  YOLOV8 指定 true；
-    // postProcess(0.5f, m, infer_infos[0].scale_ratio, infer_infos[0].left_padding, infer_infos[0].top_padding, false, *det_res_vec);
-
-    auto end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double, std::milli> spend = end - start;
-    det_num = det_res_vec->size();
-    for(auto& it : *det_res_vec){
-        cout << it.tl_x << " " << it.tl_y << " " << it.br_x << " " << it.br_y << " cls: " << it.cls << " conf: " << it.confidence << endl;
-    }
-    cout << "inference cost: " << spend.count() << " ms" << endl;
-
-    return det_res_vec->data();
-}
-
-/*
-DET_RES* doInferenceBy3chImgPatches01(uchar* image_arr, const int height, const int width, const int patch_size, const int overlap_size, void* model_ptr, const float score_threshold, const bool is_use_nms, size_t& det_num, char* msg){
-    std::vector<std::array<int, 4> > roiList;
-    int x_end = 0, y_end = 0;
-    for(int y_start=0; y_start<height; y_start+=(patch_size-overlap_size)){
-        for(int x_start=0; x_start<width; x_start+=(patch_size-overlap_size)){
-            x_end = std::min({width, x_start+patch_size});
-            y_end = std::min(height, y_start+patch_size);
-            x_start = x_end - patch_size;
-            y_start = y_end - patch_size;
-            roiList.push_back({x_start, y_start, x_end, y_end});          
-
-            if(x_end == width) break;
-        }
-        if(y_end==height) break;
-    }
-
-    vector<DET_RES>* det_res_vec = new std::vector<DET_RES>();
-    ov::CompiledModel* cmodel_ptr = static_cast<ov::CompiledModel*>(model_ptr);
-    std::vector<InferInfo> infer_infos;
-
-    cv::Mat org_img(cv::Size(width, height), CV_8UC3, image_arr);
-    cout << "Patch num: " << roiList.size() << endl;
-    ov::Shape output_tensor_shape = cmodel_ptr->output().get_shape();
-    size_t batch_num=output_tensor_shape[0], res_height=output_tensor_shape[1], res_width=output_tensor_shape[2];
-
-    vector<ov::InferRequest> reqs;
-    std::exception_ptr eptr;
-    for(int i=0; i<roiList.size(); ++i){
-        reqs.push_back(cmodel_ptr->create_infer_request());
-        reqs[i].set_callback([&](std::exception_ptr ex){
-            if(ex){
-                eptr=ex;
-                return;
-            }
-            
-            auto output_tensor = reqs[i].get_output_tensor();
-            const float* output_buff = output_tensor.data<const float>();
-            cv::Mat m = cv::Mat(cv::Size(res_width, res_height), CV_32F, const_cast<float*>(output_buff));
-            cout << m.size << endl;
-            // YOLOV10 需要指定 false  YOLOV8 指定 true；
-            // postProcess(0.5f, m, infer_infos[i].scale_ratio, infer_infos[i].left_padding, infer_infos[i].top_padding, false, *det_res_vec);
-            return;
-        });
-    }
-
-    auto start = std::chrono::high_resolution_clock::now();
-    cv::Mat patch;
-    try{
-    for (int i=0; i< roiList.size(); ++i){
-        cout << "Now process patch: " << i << endl;
-        // cv::Mat tmp = org_img(cv::Rect(cv::Point(roiList[i][0], roiList[i][1]), cv::Point(roiList[i][2], roiList[i][3])));
-        cv::Mat tmp = cv::imread(R"(E:\my_depoly\bin\test_images\det_dent_test1.jpg)");
-        cout << &tmp << endl;
-        cout << roiList[i][0] << " " << roiList[i][1] << " " << roiList[i][2] << " " << roiList[i][3] << endl;        
-        cv::imshow("t", tmp);
-        cv::waitKey();
-        tmp.copyTo(patch);
-        InferInfo info(i);
-
-        cv::Mat processed_mat = preProcess(patch, cmodel_ptr, info);
-        // TODO 后续要把这一步封装到preProcess中
-        processed_mat = cv::dnn::blobFromImage(processed_mat, 1.0/255.0, cv::Size(640, 640), 0.0, true, false, CV_32F);
-        auto input_port = cmodel_ptr->input();
-        ov::Tensor input_tensor = ov::Tensor(input_port.get_element_type(), input_port.get_shape(), processed_mat.ptr());
-        reqs[i].set_input_tensor(input_tensor);
-        reqs[i].start_async();
-        reqs[i].wait();
-        infer_infos.emplace_back(info);
-    }
-    }catch(std::exception& ex){
-        cout << ex.what() << endl;
-    }
-
-    for (int i=0; i<roiList.size(); ++i){
-        reqs[i].wait();
-        // cout << "Now Process request id: " << infer_infos[0].id_ << endl;
-        std::this_thread::sleep_for(std::chrono::duration<double, std::milli>(2));
-    }
-
-    auto end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double, std::milli> spend = end - start;
-    det_num = det_res_vec->size();
-    for(auto& it : *det_res_vec){
-        cout << it.tl_x << " " << it.tl_y << " " << it.br_x << " " << it.br_y << " cls: " << it.cls << " conf: " << it.confidence << endl;
-    }
-    cout << "inference cost: " << spend.count() << " ms" << endl;
-
-    return det_res_vec->data();
-}
-
-
-void testAsync(){
-    cout << "----- Try Async ------" << endl;
-    cout << ov::get_openvino_version() << endl;
-
-    ov::Core core;
-    string onnx_pth = R"(D:\share_dir\impression_detect\workdir\yolov10\dent_det\yolov10s_freeze8_use_sgd2\weights\yolov10_freeze8_best.onnx)";
-    std::shared_ptr<ov::Model> model = core.read_model(onnx_pth);
-    ov::set_batch(model, 10);
-    cout << "Input size: " << model->inputs().size() << endl;
-    cout << "Output size: " << model->outputs().size() << endl;
-    ov::CompiledModel cmodel = core.compile_model(model, "CPU");
-
-    std::vector<DET_RES> det_res_vec;
-    // 遍历多张图片
-    // std::vector<InferInfo> infer_infos = {InferInfo(1, cmodel.create_infer_request()), InferInfo(2, cmodel.create_infer_request())};
-
-    std::string img_pth = R"(E:\my_depoly\bin\test_images\det_dent_test1.jpg)";
-    cv::Mat img_mat = cv::imread(img_pth);
-
-    auto start = std::chrono::high_resolution_clock::now();
-    
-    ov::Shape output_tensor_shape = cmodel.output().get_shape();
-    size_t batch_num=output_tensor_shape[0], res_height=output_tensor_shape[1], res_width=output_tensor_shape[2];
-
-    InferInfo info(0);
-    cv::Mat processed_mat = preProcess(img_mat, &cmodel, info);   
-    // TODO 后续要把这一步封装到preProcess中
-    // processed_mat = cv::dnn::blobFromImage(processed_mat, 1.0/255.0, cv::Size(640, 640), 0.0, true, false, CV_32F);
-    vector<cv::Mat> imgs;
-    for(int i=0; i<10; ++i){
-        imgs.push_back(processed_mat);
-    }
-    processed_mat = cv::dnn::blobFromImages(imgs, 1.0/255.0, cv::Size(640, 640), 0.0, true, false, CV_32F);
-
-    ov::InferRequest request = cmodel.create_infer_request();
-
-    auto input_port = cmodel.input();
-    ov::Tensor input_tensor = ov::Tensor(input_port.get_element_type(), input_port.get_shape(), processed_mat.ptr());
-    request.set_input_tensor(input_tensor);
-    request.start_async();
-
-    // for (int i=1; i<20; ++i){
-    //     // threads.push_back(std::thread(testTask, cmodel, img_mat));
-    //     // testTask(cmodel, img_mat, requests);  // 1739ms
-
-    //     cv::Mat processed_mat = preProcess(img_mat, &cmodel, infer_infos[1]);   
-    //     // TODO 后续要把这一步封装到preProcess中
-    //     processed_mat = cv::dnn::blobFromImage(processed_mat, 1.0/255.0, cv::Size(640, 640), 0.0, true, false, CV_32F);
-    //     auto input_port = cmodel.input();
-    //     ov::Tensor input_tensor = ov::Tensor(input_port.get_element_type(), input_port.get_shape(), processed_mat.ptr());
-    //     infer_infos[1].request.set_input_tensor(input_tensor);
-    //     infer_infos[1].request.start_async();
-
-    //     // cv::Mat processed_mat = preProcess(img_mat, &cmodel, infer_infos[0]);   
-    //     // // TODO 后续要把这一步封装到preProcess中
-    //     // processed_mat = cv::dnn::blobFromImage(processed_mat, 1.0/255.0, cv::Size(640, 640), 0.0, true, false, CV_32F);
-    //     // auto input_port = cmodel.input();
-    //     // ov::Tensor input_tensor = ov::Tensor(input_port.get_element_type(), input_port.get_shape(), processed_mat.ptr());
-    //     // infer_infos[0].request.set_input_tensor(input_tensor);
-    //     // infer_infos[0].request.start_async();
-
-    //     infer_infos[0].request.wait();
-    //     cout << "Now Process request id: " << infer_infos[0].id_ << endl;
-    //     auto output_tensor = infer_infos[0].request.get_output_tensor();
-    //     const float* output_buff = output_tensor.data<const float>();
-    //     cv::Mat m = cv::Mat(cv::Size(res_width, res_height), CV_32F, const_cast<float*>(output_buff));
-    //     // YOLOV10 需要指定 false  YOLOV8 指定 true；
-    //     postProcess(0.5f, m, infer_infos[0].scale_ratio, infer_infos[0].left_padding, infer_infos[0].top_padding, false, det_res_vec);
-
-    //     std::swap(infer_infos[0], infer_infos[1]);
-    // }
-    // infer_infos[0].request.wait();
-    // cout << "Now Process request id: " << infer_infos[0].id_ << endl;
-
-    request.wait();
-    auto output_tensor = request.get_output_tensor();
-    auto output_shape = output_tensor.get_shape();
-    const float* output_buff = output_tensor.data<const float>();
-    cv::Mat m = cv::Mat(cv::Size(res_width, res_height), CV_32F, const_cast<float*>(output_buff));
-    // YOLOV10 需要指定 false  YOLOV8 指定 true；
-    // postProcess(0.5f, m, infer_infos[0].scale_ratio, infer_infos[0].left_padding, infer_infos[0].top_padding, false, det_res_vec);
-
-    auto end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double, std::milli> spend = end - start;
-    for(auto& it : det_res_vec){
-        cout << it.tl_x << " " << it.tl_y << " " << it.br_x << " " << it.br_y << " cls: " << it.cls << " conf: " << it.confidence << endl;
-    }
-    cout << "inference cost: " << spend.count() << " ms" << endl;
-}
-
-*/
-
-CLS_RES doInferenceBy3chImg2(uchar* image_arr, const int height, const int width, void* compiled_model, char* msg, size_t msg_len){
-    // 对三通道的图进行推理
-    CLS_RES cls_res(1, 0.9);
-
-    cv::Mat img(cv::Size(width, height), CV_8UC3, image_arr);
-    size_t det_num = 0;
-    DET_RES* det_res = doInferenceByImgMat(img, compiled_model, 0.3f, true, det_num, msg);
-    
-    if(det_num==0)
-        return cls_res;
-    
-    vector<DET_RES> det_vec;
-    for(int i=0; i<det_num; ++i){
-        det_vec.push_back(det_res[i]);
-    }
-
-    std::sort(det_vec.begin(), det_vec.end(), [](DET_RES det1, DET_RES det2){ return det1.confidence > det2.confidence; });
-
-    cls_res.cls = 0;
-    cls_res.confidence = det_vec[0].confidence;
-    return cls_res;
 }

@@ -136,8 +136,6 @@ void testDetInfer(){
     // std::string img_pth = R"(E:\my_depoly\bin\test_images\det_cell_test3.jpg)";
 
     // 破碎检查
-    // D:\share_dir\pd_edge_crack\workdir\det_crack_rect\yolom_freeze9_sgd_aug4\weights\yolov8_det02.onnx
-    // E:\DataSets\edge_crack\cut_patches_0828\crack\2024082215300_D3_unk_3480.jpg
     string onnx_pth{};
     cout << "Onnx Model Path: ";
     cin >> onnx_pth; // R"(D:\share_dir\pd_edge_crack\workdir\det_crack\yolom_freeze9_sgd_aug6\weights\yolov8_det02.onnx)";
@@ -148,9 +146,6 @@ void testDetInfer(){
     std::string img_pth{}; // R"(E:\DataSets\edge_crack\cut_patches_0825\tmp\20240628092227_1371.jpg)";
     cout << "Image Path: ";
     cin >> img_pth;
-    // std::regex model_pattern(R"(yolov\d)");
-
-    // testAsync();
 
     char msg[10240];
     std::memset(msg, '\0', 10240);
@@ -176,18 +171,61 @@ void testDetInfer(){
     cv::imshow("Test", org_img);
     cv::waitKey(0);
 
-    // 接口 3：传图片指针推理
-    cout << ">>>>>>>>>>>>> Inference by image pointer <<<<<<<<<<<<<<<<<<<" << endl; 
-    cv::Mat img = cv::imread(img_pth);
-    DET_RES* res = doInferenceBy3chImg(img.data, img.rows, img.cols, model_ptr, 0.5f, model_type, det_num, msg);
-    cout << msg << endl;
-    for(int i=0; i<det_num; ++i){
-        cout << "i: " << i << endl;
-        cout << res[i].get_info() << endl;
-    }
+    // // 接口 3：传图片指针推理
+    // cout << ">>>>>>>>>>>>> Inference by image pointer <<<<<<<<<<<<<<<<<<<" << endl; 
+    // cv::Mat img = cv::imread(img_pth);
+    // DET_RES* res = doInferenceBy3chImg(img.data, img.rows, img.cols, model_ptr, 0.5f, model_type, det_num, msg);
+    // cout << msg << endl;
+    // for(int i=0; i<det_num; ++i){
+    //     cout << "i: " << i << endl;
+    //     cout << res[i].get_info() << endl;
+    // }
     // CLS_RES res = doInferenceBy3chImg(img.data, img.rows, img.cols, model_ptr, msg);
     // cout << msg << endl;
     // cout << "class: " << res.cls << " confidence: " << res.confidence << endl;
+
+    // 测试 v8 v10 v11 版本模型效果
+    // char msg[10240];
+    // size_t det_num{};
+    cout << "================= yolov8 ====================" << endl;
+    std::memset(msg, '\0', 10240);
+    std::string v8_onnx = R"(D:\share_dir\cell_det\workdir\runs\detect\det_s_freeze10_sgd\weights\det_cell_s_0805.onnx)";
+    std::string v8_img_pth = R"(E:\DataSets\dents_det\org_D1\gold_scf\NG\20231205_00001_P51-R_1_16_C2_DS_A2DS2S39593AC028_A2DS2S3903IBE011.jpg)";
+    void* model_ptrv8 = initModel(v8_onnx.data(), msg);
+    cout << msg << endl;
+    DET_RES* resultv8 = doInferenceByImgPth(v8_img_pth.c_str(), model_ptrv8, nullptr, 0.3f, 8, det_num, msg);
+    cout << msg << endl;
+    for(int i=0; i<det_num; ++i){
+        cout << "i: " << i << " ";
+        cout << resultv8[i].get_info() << endl;
+    }
+
+    cout << "================= yolov10 ====================" << endl;    
+    std::memset(msg, '\0', 10240);
+    std::string v10_onnx = R"(D:\share_dir\impression_detect\workdir\yolov10\yolov10m\d1_black_sgd\weights\yolov10m_01.onnx)";
+    std::string v10_img_pth = R"(E:\DataSets\dents_det\org_D1\black_scf\cutPatches\NG\20240925_00001_P51-L_A743934612_1_17_C2_FS_A2FS1S46YR9DC140_A2FS1R4662RAD044_8391.jpg)";
+    void* model_ptrv10 = initModel(v10_onnx.data(), msg);
+    cout << msg << endl;
+    DET_RES* resultv10 = doInferenceByImgPth(v10_img_pth.c_str(), model_ptrv10, nullptr, 0.3f, 10, det_num, msg);
+    cout << msg << endl;
+    for(int i=0; i<det_num; ++i){
+        cout << "i: " << i << " ";
+        cout << resultv10[i].get_info() << endl;
+    }
+
+    cout << "================= yolov11 ====================" << endl;
+    std::memset(msg, '\0', 10240);
+    std::string v11_onnx = R"(D:\share_dir\impression_detect\workdir\yolov11\det_dent_gold_scf\yolov11m_sgd\weights\yolov11m_04.onnx)";
+    std::string v11_img_pth = R"(E:\DataSets\dents_det\org_D1\gold_scf\cutPatches\NG\5_4183.jpg)";
+    void* model_ptrv11 = initModel(v11_onnx.data(), msg);
+    cout << msg << endl;
+    DET_RES* resultv11 = doInferenceByImgPth(v11_img_pth.c_str(), model_ptrv11, nullptr, 0.3f, 11, det_num, msg);
+    cout << msg << endl;
+    for(int i=0; i<det_num; ++i){
+        cout << "i: " << i << " ";
+        cout << resultv11[i].get_info() << endl;
+    }
+
 
     // // 接口 4：图片分块多线程推理  单线程 1700+ms
     // auto tick = std::chrono::high_resolution_clock::now();

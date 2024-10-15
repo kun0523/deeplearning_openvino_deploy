@@ -37,7 +37,8 @@ struct DET_RES{
     double confidence{-1};
     DET_RES()=default;
     DET_RES(const cv::Rect2d rec_, int cls_id_, double conf_):tl_x(static_cast<int>(rec_.x)), 
-                                                            tl_y(static_cast<int>(rec_.y)),                                                                                             br_x(static_cast<int>(rec_.x+rec_.width)), 
+                                                            tl_y(static_cast<int>(rec_.y)),    
+                                                            br_x(static_cast<int>(rec_.x+rec_.width)),
                                                             br_y(static_cast<int>(rec_.y+rec_.height)), 
                                                             cls(cls_id_), confidence(conf_){}
     DET_RES(const cv::Rect2i rec_, int cls_id_, double conf_):tl_x(rec_.x), 
@@ -50,19 +51,12 @@ struct DET_RES{
 };
 
 
-struct CLS_RES{
-    short cls{-1};
-    double confidence{-1};
-
-    CLS_RES(short cls_, double confidence_):cls(cls_), confidence(confidence_) {}
-};
-
-
 /// @brief 输入onnx模型文件路径 返回初始化完成的模型指针
 /// @param onnx_pth onnx模型文件路径字符串指针
 /// @param msg 消息字符数组，用于写入Log信息，默认数组长度1024
 /// @return 返回初始化后的模型指针
 MY_DLL void* initModel(const char* onnx_pth, char* msg);
+
 
 /// @brief 根据图片名+ROI 进行目标检测
 /// @param img_pth 图片路径
@@ -74,6 +68,7 @@ MY_DLL void* initModel(const char* onnx_pth, char* msg);
 /// @param msg 消息字符数组，用于写入信息 默认数组长度1024
 /// @return 返回 DET_RES 数组指针 包含多个检测结果
 MY_DLL DET_RES* doInferenceByImgPth(const char* img_pth, void* model_ptr, const int* roi, const float score_threshold, const short model_type, size_t& det_num, char* msg);
+
 
 /// @brief 根据 图像指针+图像尺寸 进行目标检测
 /// @param image_arr 图像内存指针 OpenCV BGR 3通道图的指针
@@ -87,17 +82,8 @@ MY_DLL DET_RES* doInferenceByImgPth(const char* img_pth, void* model_ptr, const 
 /// @return 返回 DET_RES 数组指针 包含多个检测结果
 MY_DLL DET_RES* doInferenceBy3chImg(uchar* image_arr, const int height, const int width, void* model_ptr, const float score_threshold, const short model_type, size_t& det_num, char* msg);
 
-/// @brief 根据 图像指针+图像尺寸 进行目标检测  转换为分类结果
-/// @param image_arr 图像内存指针 OpenCV BGR 3通道图的指针
-/// @param height 图像高度
-/// @param width 图像宽度
-/// @param model_ptr OpenVINO 模型指针
-/// @param msg 消息字符数组，用于写入信息 默认数组长度1024
-/// @return 返回 CLS_RES 仅返回分类结果
-MY_DLL CLS_RES doInferenceBy3chImgCls(uchar* image_arr, const int height, const int width, void* compiled_model, char* msg, size_t msg_len=1024);
 
-
-/// @brief 在指定ROI区域后的图，尺寸依旧很大，可进行逐个小patch推理
+/// @brief 在指定ROI区域后的图，尺寸依旧很大，可进行逐个小patch推理  并行推理有问题，还不开放
 /// @param image_arr 
 /// @param height 
 /// @param width 
@@ -109,13 +95,10 @@ MY_DLL CLS_RES doInferenceBy3chImgCls(uchar* image_arr, const int height, const 
 /// @param det_num 
 /// @param msg 
 /// @return
-MY_DLL DET_RES* doInferenceBy3chImgPatches(uchar* image_arr, const int height, const int width, const int patch_size, const int overlap_size, void* model_ptr, const float score_threshold, const short model_type, size_t& det_num, char* msg);
+DET_RES* doInferenceBy3chImgPatches(uchar* image_arr, const int height, const int width, const int patch_size, const int overlap_size, void* model_ptr, const float score_threshold, const short model_type, size_t& det_num, char* msg);
 
 
-MY_DLL void testAsync();
-
-
-void warmUp(void* model_ptr, char* msg);
+void warmUp(void* model_ptr, std::stringstream& msg_ss_);
 DET_RES* doInferenceByImgMat(const cv::Mat& img_mat, void* compiled_model, const float score_threshold, const short model_type, size_t& det_num, char* msg);
 char* resizeImageAsYOLO(ov::CompiledModel& compiled_model, const cv::Mat& org_img, cv::Mat& boarded_img, double& scale_ratio, int& left_padding, int& top_padding);
 char* opencvMat2Tensor(cv::Mat& img_mat, ov::CompiledModel& compiled_model, ov::Tensor& out_tensor);
