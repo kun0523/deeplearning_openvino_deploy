@@ -202,7 +202,7 @@ DET_RES* doInferenceByImgMat(const cv::Mat& img_mat, void* compiled_model, const
     msg_ss << "Model Input Shape: " << input_tensor_shape << "\n";
 
     // // TODO: 增强
-    // img_mat.convertTo(img_mat, -1, 1, -20);
+    // img_mat.convertTo(img_mat, -1, 1.2, 3);
     cv::Mat resized_img;
     double scale_ratio;
     int left_padding_cols, top_padding_rows;

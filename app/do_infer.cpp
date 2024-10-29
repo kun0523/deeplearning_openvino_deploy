@@ -3,8 +3,9 @@
 #include <filesystem>
 #include <regex>
 
+#define SKLEARN
 // #define CLS
-#define DET 
+// #define DET 
 // #define SEG 
 
 void createDirectoryIfNotExists(const std::string& dirPath) {
@@ -21,6 +22,30 @@ void createDirectoryIfNotExists(const std::string& dirPath) {
         std::cout << "Save Dir Already Exists: " << dirPath << std::endl;
     }
 }
+
+
+#ifdef SKLEARN
+void testSklearnInfer(){
+    std::cout << "------ Test Sklearn infer API -------" << std::endl;
+
+    std::string onnx_pth = R"(D:\share_dir\cell_corner_curve\src\random_forest_5feats.onnx)";
+    void* session_p = initModel(onnx_pth.c_str());
+    std::cout << "========== First Inference =============" << std::endl;
+    Point points[5] = {Point(1,1), Point(2,2), Point(3,3)};
+    CLS_RES result = doInference(session_p, Point(), points, 5);
+    result.print();
+
+    std::cout << "========== Second Inference =============" << std::endl;
+    Point points2[5] = {Point(1,1), Point(2,2), Point(3,3), Point(3,4), Point(5,5)};
+    result = doInference(session_p, Point(), points2, 5);
+    result.print();  
+
+    std::cout << "========== Third Inference =============" << std::endl;
+    Point points3[5] = {Point(-6.54, 8.16), Point(-7.19, 7.64), Point(-7.77, 7.04), Point(-8.26, 6.36), Point()};
+    result = doInference(session_p, Point(), points3, 5);
+    result.print();   
+}
+#endif
 
 #ifdef CLS 
 void testClsInfer(){
@@ -64,7 +89,7 @@ void testClsInfer(){
             cout << msg << endl;
             std::filesystem::path tmp_pth(img_pth);
             string tmp_save_pth;
-            if(result2.cls==0)
+            if(result2.cls==0 || result2.cls==2)
                 tmp_save_pth = save_dir_ng + "/" + tmp_pth.filename().string();
             else
                 tmp_save_pth = save_dir_ok + "/" + tmp_pth.filename().string();
@@ -82,9 +107,12 @@ void testClsInfer(){
         int total_counter = 0, ng_counter = 0;
         for(auto& img_pth : std::filesystem::directory_iterator(img_dir)){
             cout << "Now Process Image: " << img_pth.path().filename() << endl;
-            cv::Mat img = cv::imread(img_pth.path().string());
-            cv::Mat img_enhance;
-            img.convertTo(img_enhance, CV_8UC3, 1.0, 0);
+            cv::Mat img = cv::imread(img_pth.path().string(), cv::ImreadModes::IMREAD_COLOR);
+            cv::Mat img_enhance;            
+            cv::convertScaleAbs(img, img_enhance, 1.0, 0.0);
+            // cv::convertScaleAbs(img, img_enhance, 4, 10);
+            // cv::imshow("test", img_enhance);
+            // cv::waitKey(0);
             total_counter++;
 
             std::filesystem::path tmp_pth(img_pth);
@@ -92,7 +120,7 @@ void testClsInfer(){
 
             auto result = doInferenceBy3chImg(img_enhance.ptr(), img.rows, img.cols, model_ptr, msg);
             cout << "Got Class: " << result.cls << " Confidence: " << result.confidence << endl;
-            if (result.cls == 0){
+            if (result.cls == 0 || result.cls==2){
                 // cv::imwrite(save_dir+"/"+img_pth.path().filename().string(), img);
                 tmp_save_pth = save_dir_ng + "/" + tmp_pth.filename().string();
                 ng_counter++;
@@ -100,7 +128,8 @@ void testClsInfer(){
             else{
                 tmp_save_pth = save_dir_ok + "/" + tmp_pth.filename().string();
             }
-            std::filesystem::copy_file(img_pth, tmp_save_pth, std::filesystem::copy_options::overwrite_existing);
+            // std::filesystem::copy_file(img_pth, tmp_save_pth, std::filesystem::copy_options::overwrite_existing);
+            cv::imwrite(tmp_save_pth, img_enhance);
 
         }
         cout << "Totall Num: " << total_counter << " NG Num: " << ng_counter << endl;
@@ -123,6 +152,47 @@ void testClsInfer(){
     //     cout << msg << endl;
     //     cout << "Class: " << res.cls << " Confidence: " << res.confidence << endl;
     // }
+}
+
+void imageEnhance(){
+
+    string org_img_dir{}, save_img_dir{};
+    while(true){
+
+        cout << "Input Image Directory: ";
+        cin >> org_img_dir;
+        cout << "Input Save Directory: ";
+        cin >> save_img_dir;
+
+        auto d = std::filesystem::path(org_img_dir);    
+        string cls = d.filename().string();
+        if(!std::filesystem::exists(org_img_dir)){
+            cout << org_img_dir << " not Exists!" << endl;
+            continue;
+        }
+
+        if(!std::filesystem::exists(save_img_dir)){
+            if(!std::filesystem::create_directories(std::filesystem::path(save_img_dir))){
+                cout << save_img_dir << " Create Failed!"<<endl;
+                continue;
+            }
+        }
+
+        for(auto file : std::filesystem::directory_iterator(org_img_dir)){            
+            cout << "file: " << file << endl;
+            cv::Mat org_img = cv::imread(file.path().string(), cv::IMREAD_COLOR);
+
+            cv::Mat res_img;
+            cv::convertScaleAbs(org_img, res_img, 4, 10);
+
+            // cv::imshow(cls, res_img);
+            // cv::waitKey(0);
+
+            string save_pth = save_img_dir + "\\" + file.path().filename().string();
+            cv::imwrite(save_pth, res_img);
+        }
+    }
+
 }
 #endif
 
@@ -252,10 +322,18 @@ void testSegInfer(){}
 // TODO 留一个参数 控制是否输出Log文件
 void main(){
 
-    cout << "opencv version: " << CV_VERSION << endl;
+    // std::cout << "opencv version: " << CV_VERSION << std::endl;
+
+    std::cout << "Start App: "<< std::endl;
+
+    #ifdef SKLEARN
+    testSklearnInfer();
+    #endif
 
     #ifdef CLS 
     testClsInfer();
+
+    // imageEnhance();
     #endif 
     
     #ifdef DET 
