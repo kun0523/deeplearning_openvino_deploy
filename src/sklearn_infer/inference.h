@@ -11,7 +11,7 @@
 #define MY_DLL extern "C" __declspec(dllexport)
 
 struct CLS_RES{
-    bool isNg{0};
+    int isNg{0};
     double confidence{-1};
 
     CLS_RES():isNg(0), confidence(-1){}

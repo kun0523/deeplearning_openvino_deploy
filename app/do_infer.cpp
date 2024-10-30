@@ -3,9 +3,10 @@
 #include <filesystem>
 #include <regex>
 
-#define SKLEARN
+// #define SKLEARN
 // #define CLS
 // #define DET 
+#define DET_OPVNO
 // #define SEG 
 
 void createDirectoryIfNotExists(const std::string& dirPath) {
@@ -22,6 +23,18 @@ void createDirectoryIfNotExists(const std::string& dirPath) {
         std::cout << "Save Dir Already Exists: " << dirPath << std::endl;
     }
 }
+
+#ifdef DET_OPVNO
+void testOpenvinoDetInfer(){
+    cout << "----- Test OpenVINO Det API -----" << endl;
+
+    initModel(R"(D:\share_dir\impression_detect\workdir\yolov11\det_dent_gold_scf\yolo11s_sgd3\weights\best_int8_openvino_model)");
+
+
+    // doInferenceByImgPth();
+
+}
+#endif
 
 
 #ifdef SKLEARN
@@ -44,6 +57,16 @@ void testSklearnInfer(){
     Point points3[5] = {Point(-6.54, 8.16), Point(-7.19, 7.64), Point(-7.77, 7.04), Point(-8.26, 6.36), Point()};
     result = doInference(session_p, Point(), points3, 5);
     result.print();   
+
+    std::cout << "========== Forth Inference =============" << std::endl;
+    Point points4[5] = {Point(-6.14, 8.32), Point(-6.80, 7.86), Point(-7.40, 7.32), Point(-7.94, 6.72), Point(-8.40, 6.06)};
+    result = doInference(session_p, Point(), points4, 5);
+    result.print();   
+
+    std::cout << "========== Fifth Inference =============" << std::endl;
+    Point points5[5] = {Point(1,1), Point(0,2), Point(3,3), Point(3,4), Point(50,50)};
+    result = doInference(session_p, Point(), points5, 5);
+    result.print(); 
 }
 #endif
 
@@ -200,12 +223,11 @@ void imageEnhance(){
 void testDetInfer(){
     cout << "----- Test Detection API -----" << endl;
     // 接口 1：模型初始化
-    // 产品区间检测
+    // // 产品区间检测
     // string onnx_pth = R"(D:\share_dir\cell_det\workdir\runs\detect\det_s_freeze10_sgd\weights\best.onnx)";  // det cell yolov8
     // bool use_nms = true;
     // std::string img_pth = R"(E:\my_depoly\bin\test_images\det_cell_test3.jpg)";
 
-    // 破碎检查
     string onnx_pth{};
     cout << "Onnx Model Path: ";
     cin >> onnx_pth; // R"(D:\share_dir\pd_edge_crack\workdir\det_crack\yolom_freeze9_sgd_aug6\weights\yolov8_det02.onnx)";
@@ -220,7 +242,7 @@ void testDetInfer(){
     char msg[10240];
     std::memset(msg, '\0', 10240);
     void* model_ptr = initModel(onnx_pth.data(), msg);
-    cout << msg << endl;
+    // cout << msg << endl;
 
     // 接口 2：指定图片路径推理
     cout << ">>>>>>>>>>>>> Inference by image path <<<<<<<<<<<<<<<<<<<" << endl; 
@@ -325,6 +347,10 @@ void main(){
     // std::cout << "opencv version: " << CV_VERSION << std::endl;
 
     std::cout << "Start App: "<< std::endl;
+
+    #ifdef DET_OPVNO
+    testOpenvinoDetInfer();
+    #endif
 
     #ifdef SKLEARN
     testSklearnInfer();
