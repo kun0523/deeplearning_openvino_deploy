@@ -65,14 +65,13 @@ MY_DLL CLS_RES doInference(void* ort_session, Point base_point, Point* points, s
 
     std::vector<float> features = calDistances(base_point, points, p_num);
     std::stringstream ss;
-    ss << "Points: ";
+    ss << "\nBasePoint: ";
+    ss << base_point.show();
+    ss << "\nPoints: ";
     for(int i{}; i<p_num; ++i){
         ss << (*(points+i)).show();
     }
-    logger->info(ss.str());
-    ss.str("");
-    ss.clear();
-    ss << "Features: ";
+    ss << "\nFeatures: ";
     for(int i{}; i<p_num; ++i){
         ss << *(features.data()+i) << ", ";
     }

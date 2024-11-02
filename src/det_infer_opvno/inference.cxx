@@ -5,7 +5,7 @@ void* initModel(const char* model_path){
 
     try{
         ov::Core core;
-        // core.set_property("CPU", ov::hint::inference_precision(ov::element::i8));
+        // auto cpuOptimizationCapabilities = core.get_property("CPU", ov::device::capabilities);
         std::string xml_pth{model_path};
         std::string bin_pth{model_path};
         xml_pth += "/best.xml";
@@ -48,7 +48,7 @@ void* initModel(const char* model_path){
         ppp.input().model().set_layout("NCHW");
         // 5) Set output tensor information:
         // - precision of tensor is supposed to be 'f32'
-        ppp.output().tensor().set_element_type(ov::element::f32);
+        ppp.output().tensor().set_element_type(ov::element::i8);
 
         // 6) Apply preprocessing modifying the original 'model'
         model = ppp.build();
@@ -93,8 +93,7 @@ void* initModel(const char* model_path){
             std::cout << std::endl;
         }
 
-        std::cout << std::endl;
-
+        std::cout << std::endl;      
 
     }catch(const std::exception& ex){
         std::cout << ex.what() << std::endl;

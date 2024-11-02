@@ -5,8 +5,8 @@
 
 // #define SKLEARN
 // #define CLS
-// #define DET 
-#define DET_OPVNO
+#define DET 
+// #define DET_OPVNO
 // #define SEG 
 
 void createDirectoryIfNotExists(const std::string& dirPath) {
@@ -41,7 +41,10 @@ void testOpenvinoDetInfer(){
 void testSklearnInfer(){
     std::cout << "------ Test Sklearn infer API -------" << std::endl;
 
-    std::string onnx_pth = R"(D:\share_dir\cell_corner_curve\src\random_forest_5feats.onnx)";
+    std::string onnx_pth{};
+    std::cout << "Input Onnx Model Path: ";
+    std::cin >> onnx_pth;
+    // std::string onnx_pth = R"(D:\share_dir\cell_corner_curve\src\random_forest_5feats.onnx)";
     void* session_p = initModel(onnx_pth.c_str());
     std::cout << "========== First Inference =============" << std::endl;
     Point points[5] = {Point(1,1), Point(2,2), Point(3,3)};
@@ -256,7 +259,7 @@ void testDetInfer(){
     cv::Mat org_img = cv::imread(img_pth);
     for(size_t i{0}; i<det_num; ++i){
         cout << "Got Detection Res: " << result2[i].get_info() << endl;        
-        cv::rectangle(org_img, cv::Rect2d(cv::Point2d(result2[i].tl_x, result2[i].tl_y), cv::Point2d(result2[i].br_x, result2[i].br_y)), cv::Scalar(0, 0, 255), 3);
+        cv::rectangle(org_img, cv::Rect2d(cv::Point2d(result2[i].tl_x, result2[i].tl_y), cv::Point2d(result2[i].br_x, result2[i].br_y)), cv::Scalar(0, 255, 0), 20);
     }
     cout << "Cost: " << spend.count() << "ms" << endl;
     cv::resize(org_img, org_img, cv::Size(), 0.2, 0.2);
@@ -279,44 +282,44 @@ void testDetInfer(){
     // 测试 v8 v10 v11 版本模型效果
     // char msg[10240];
     // size_t det_num{};
-    cout << "================= yolov8 ====================" << endl;
-    std::memset(msg, '\0', 10240);
-    std::string v8_onnx = R"(D:\share_dir\cell_det\workdir\runs\detect\det_s_freeze10_sgd\weights\det_cell_s_0805.onnx)";
-    std::string v8_img_pth = R"(E:\DataSets\dents_det\org_D1\gold_scf\NG\20231205_00001_P51-R_1_16_C2_DS_A2DS2S39593AC028_A2DS2S3903IBE011.jpg)";
-    void* model_ptrv8 = initModel(v8_onnx.data(), msg);
-    cout << msg << endl;
-    DET_RES* resultv8 = doInferenceByImgPth(v8_img_pth.c_str(), model_ptrv8, nullptr, 0.3f, 8, det_num, msg);
-    cout << msg << endl;
-    for(int i=0; i<det_num; ++i){
-        cout << "i: " << i << " ";
-        cout << resultv8[i].get_info() << endl;
-    }
+    // cout << "================= yolov8 ====================" << endl;
+    // std::memset(msg, '\0', 10240);
+    // std::string v8_onnx = R"(D:\share_dir\cell_det\workdir\runs\detect\det_s_freeze10_sgd\weights\det_cell_s_0805.onnx)";
+    // std::string v8_img_pth = R"(E:\DataSets\dents_det\org_D1\gold_scf\NG\20231205_00001_P51-R_1_16_C2_DS_A2DS2S39593AC028_A2DS2S3903IBE011.jpg)";
+    // void* model_ptrv8 = initModel(v8_onnx.data(), msg);
+    // cout << msg << endl;
+    // DET_RES* resultv8 = doInferenceByImgPth(v8_img_pth.c_str(), model_ptrv8, nullptr, 0.3f, 8, det_num, msg);
+    // cout << msg << endl;
+    // for(int i=0; i<det_num; ++i){
+    //     cout << "i: " << i << " ";
+    //     cout << resultv8[i].get_info() << endl;
+    // }
 
-    cout << "================= yolov10 ====================" << endl;    
-    std::memset(msg, '\0', 10240);
-    std::string v10_onnx = R"(D:\share_dir\impression_detect\workdir\yolov10\yolov10m\d1_black_sgd\weights\yolov10m_01.onnx)";
-    std::string v10_img_pth = R"(E:\DataSets\dents_det\org_D1\black_scf\cutPatches\NG\20240925_00001_P51-L_A743934612_1_17_C2_FS_A2FS1S46YR9DC140_A2FS1R4662RAD044_8391.jpg)";
-    void* model_ptrv10 = initModel(v10_onnx.data(), msg);
-    cout << msg << endl;
-    DET_RES* resultv10 = doInferenceByImgPth(v10_img_pth.c_str(), model_ptrv10, nullptr, 0.3f, 10, det_num, msg);
-    cout << msg << endl;
-    for(int i=0; i<det_num; ++i){
-        cout << "i: " << i << " ";
-        cout << resultv10[i].get_info() << endl;
-    }
+    // cout << "================= yolov10 ====================" << endl;    
+    // std::memset(msg, '\0', 10240);
+    // std::string v10_onnx = R"(D:\share_dir\impression_detect\workdir\yolov10\yolov10m\d1_black_sgd\weights\yolov10m_01.onnx)";
+    // std::string v10_img_pth = R"(E:\DataSets\dents_det\org_D1\black_scf\cutPatches\NG\20240925_00001_P51-L_A743934612_1_17_C2_FS_A2FS1S46YR9DC140_A2FS1R4662RAD044_8391.jpg)";
+    // void* model_ptrv10 = initModel(v10_onnx.data(), msg);
+    // cout << msg << endl;
+    // DET_RES* resultv10 = doInferenceByImgPth(v10_img_pth.c_str(), model_ptrv10, nullptr, 0.3f, 10, det_num, msg);
+    // cout << msg << endl;
+    // for(int i=0; i<det_num; ++i){
+    //     cout << "i: " << i << " ";
+    //     cout << resultv10[i].get_info() << endl;
+    // }
 
-    cout << "================= yolov11 ====================" << endl;
-    std::memset(msg, '\0', 10240);
-    std::string v11_onnx = R"(D:\share_dir\impression_detect\workdir\yolov11\det_dent_gold_scf\yolov11m_sgd\weights\yolov11m_04.onnx)";
-    std::string v11_img_pth = R"(E:\DataSets\dents_det\org_D1\gold_scf\cutPatches\NG\5_4183.jpg)";
-    void* model_ptrv11 = initModel(v11_onnx.data(), msg);
-    cout << msg << endl;
-    DET_RES* resultv11 = doInferenceByImgPth(v11_img_pth.c_str(), model_ptrv11, nullptr, 0.3f, 11, det_num, msg);
-    cout << msg << endl;
-    for(int i=0; i<det_num; ++i){
-        cout << "i: " << i << " ";
-        cout << resultv11[i].get_info() << endl;
-    }
+    // cout << "================= yolov11 ====================" << endl;
+    // std::memset(msg, '\0', 10240);
+    // std::string v11_onnx = R"(D:\share_dir\impression_detect\workdir\yolov11\det_dent_gold_scf\yolov11m_sgd\weights\yolov11m_04.onnx)";
+    // std::string v11_img_pth = R"(E:\DataSets\dents_det\org_D1\gold_scf\cutPatches\NG\5_4183.jpg)";
+    // void* model_ptrv11 = initModel(v11_onnx.data(), msg);
+    // cout << msg << endl;
+    // DET_RES* resultv11 = doInferenceByImgPth(v11_img_pth.c_str(), model_ptrv11, nullptr, 0.3f, 11, det_num, msg);
+    // cout << msg << endl;
+    // for(int i=0; i<det_num; ++i){
+    //     cout << "i: " << i << " ";
+    //     cout << resultv11[i].get_info() << endl;
+    // }
 
 
     // // 接口 4：图片分块多线程推理  单线程 1700+ms

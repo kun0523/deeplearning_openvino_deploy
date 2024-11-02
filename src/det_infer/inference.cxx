@@ -275,12 +275,22 @@ char* opencvMat2Tensor(cv::Mat& img_mat, ov::CompiledModel& compiled_model, ov::
 
 DET_RES* doInferenceByImgPth(const char* img_pth, void* model_ptr, const int* roi, const float score_threshold, const short model_type, size_t& det_num, char* msg){
     // 对三通道的图进行推理
+    auto start = std::chrono::high_resolution_clock::now();
     cv::Mat org_img = cv::imread(img_pth, cv::IMREAD_COLOR);
     cv::Mat img_part;
     if(roi)
         img_part = org_img(cv::Rect(cv::Point(roi[0], roi[1]), cv::Point(roi[2], roi[3])));
     else
         org_img.copyTo(img_part); 
+    auto stop = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::milli> spend = stop -start;
+    std::cout << "====== Read Image cost: " << spend.count() << "ms" << std::endl;
 
-    return doInferenceByImgMat(img_part, model_ptr, score_threshold, model_type, det_num, msg);
+    auto infer_start = std::chrono::high_resolution_clock::now();
+    DET_RES* ret = doInferenceByImgMat(img_part, model_ptr, score_threshold, model_type, det_num, msg);
+    auto infer_stop = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::milli> infer_spend = infer_stop - infer_start;
+    std::cout << "====== Inference cost: " << infer_spend.count() << "ms" << std::endl;
+
+    return ret;
 }
