@@ -16,7 +16,6 @@ std::string DET_RES::get_info(){
 }
 
 void* initModel(const char* onnx_pth, char* msg){
-    // TODO: 怎么做多batch 推理？？？
     std::stringstream msg_ss;
     msg_ss << "Call <initModel> Func\n";
     ov::Core core;  
@@ -25,7 +24,7 @@ void* initModel(const char* onnx_pth, char* msg){
     try{   
         // 验证openvino环境是否正确     
         auto devices = core.get_available_devices();
-        auto version = core.get_versions(core.get_available_devices()[0]);
+        auto version = core.get_versions(core.get_available_devices()[0]);        
         for(auto& item:version){
             msg_ss << item.first << " : " << item.second << "\n";
         }
@@ -37,7 +36,15 @@ void* initModel(const char* onnx_pth, char* msg){
     }   
 
     try{      
-        compiled_model_ptr = new ov::CompiledModel(core.compile_model(onnx_pth, "CPU"));                       
+        // auto model = core.read_model(R"(E:\le_trt\models\yolo11s01_int8_openvino_model\yolo11s01.xml)", 
+        //                             R"(E:\le_trt\models\yolo11s01_int8_openvino_model\yolo11s01.bin)");
+        // compiled_model_ptr = new ov::CompiledModel(core.compile_model(model, "CPU", 
+        //                                                             ov::hint::performance_mode(ov::hint::PerformanceMode::THROUGHPUT), 
+        //                                                             ov::hint::num_requests(4), ov::auto_batch_timeout(1000)));                       
+
+        compiled_model_ptr = new ov::CompiledModel(core.compile_model(onnx_pth, "CPU", 
+                                                                    ov::hint::performance_mode(ov::hint::PerformanceMode::THROUGHPUT), 
+                                                                    ov::hint::num_requests(4), ov::auto_batch_timeout(1000)));                       
         msg_ss << "Create Compiled model Success. Got Model Pointer: " << compiled_model_ptr << "\n";
     }catch(std::exception ex){
         msg_ss << "Create Model Failed\n";
@@ -136,8 +143,8 @@ char* postProcess(const float conf_threshold, cv::Mat& det_result_mat, const dou
             // 模型输出是 两个角点坐标
             tl_x = ptr[0], tl_y = ptr[1], br_x=ptr[2], br_y=ptr[3];
             boxes.emplace_back(tl_x, tl_y, br_x-tl_x, br_y-tl_y);
-            break;        
-
+            break;
+            
         case 11:
             // 模型输出是 中心点 + 宽高
             cx = ptr[0], cy = ptr[1], w=ptr[2], h=ptr[3];  // 还不清楚是框架的问题还是有地方可以控制
@@ -221,7 +228,7 @@ DET_RES* doInferenceByImgMat(const cv::Mat& img_mat, void* compiled_model, const
     ov::Shape output_tensor_shape = model_ptr->output().get_shape();
     msg_ss << "Model Output Shape: " << output_tensor_shape << "\n";
 
-    size_t batch_num=output_tensor_shape[0], res_height=output_tensor_shape[1], res_width=output_tensor_shape[2];
+    size_t res_height=output_tensor_shape[1], res_width=output_tensor_shape[2];
     auto output_tensor = infer_request.get_output_tensor();
     const float* output_buff = output_tensor.data<const float>();
     cv::Mat m = cv::Mat(cv::Size(res_width, res_height), CV_32F, const_cast<float*>(output_buff));
@@ -238,7 +245,7 @@ DET_RES* doInferenceByImgMat(const cv::Mat& img_mat, void* compiled_model, const
         it->br_x = std::min(it->br_x, img_mat.cols);
         it->br_y = std::min(it->br_y, img_mat.rows);
         det_res[counter++] = *it;
-        cout << it->tl_x << " " << it->tl_y << " " << it->br_x << " " << it->br_y << " cls: " << it->cls << " conf: " << it->confidence << endl;
+        // cout << it->tl_x << " " << it->tl_y << " " << it->br_x << " " << it->br_y << " cls: " << it->cls << " conf: " << it->confidence << endl;
     }
     msg_ss << "Detect Object Num: " << det_num << "\n";
     msg_ss << "---- Inference Over ----\n";
@@ -275,22 +282,83 @@ char* opencvMat2Tensor(cv::Mat& img_mat, ov::CompiledModel& compiled_model, ov::
 
 DET_RES* doInferenceByImgPth(const char* img_pth, void* model_ptr, const int* roi, const float score_threshold, const short model_type, size_t& det_num, char* msg){
     // 对三通道的图进行推理
-    auto start = std::chrono::high_resolution_clock::now();
+    // auto start = std::chrono::high_resolution_clock::now();
     cv::Mat org_img = cv::imread(img_pth, cv::IMREAD_COLOR);
     cv::Mat img_part;
+
     if(roi)
         img_part = org_img(cv::Rect(cv::Point(roi[0], roi[1]), cv::Point(roi[2], roi[3])));
     else
         org_img.copyTo(img_part); 
-    auto stop = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double, std::milli> spend = stop -start;
-    std::cout << "====== Read Image cost: " << spend.count() << "ms" << std::endl;
+    // auto stop = std::chrono::high_resolution_clock::now();
+    // std::chrono::duration<double, std::milli> spend = stop -start;
+    // std::cout << "====== Read Image cost: " << spend.count() << "ms" << std::endl;
 
-    auto infer_start = std::chrono::high_resolution_clock::now();
+    // auto infer_start = std::chrono::high_resolution_clock::now();
     DET_RES* ret = doInferenceByImgMat(img_part, model_ptr, score_threshold, model_type, det_num, msg);
-    auto infer_stop = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double, std::milli> infer_spend = infer_stop - infer_start;
-    std::cout << "====== Inference cost: " << infer_spend.count() << "ms" << std::endl;
+    // auto infer_stop = std::chrono::high_resolution_clock::now();
+    // std::chrono::duration<double, std::milli> infer_spend = infer_stop - infer_start;
+    // std::cout << "====== Inference cost: " << infer_spend.count() << "ms" << std::endl;
 
     return ret;
+}
+
+void* doInferenceBy3chImgPatches(uchar** imgs_ptr_arr, const size_t imgs_num, const int height, const int width, 
+                                    void* model_ptr, const float score_threshold, const short model_type, char* msg){
+                   
+    ov::CompiledModel* compiled_model_ptr = static_cast<ov::CompiledModel*>(model_ptr);
+
+    auto input_shape = compiled_model_ptr->input().get_shape();
+    auto output_shape = compiled_model_ptr->output().get_shape();
+
+    size_t input_height = input_shape[2], input_width=input_shape[3];
+    size_t output_height = output_shape[1], output_width=output_shape[2];
+
+    auto results = new vector<vector<DET_RES>>();
+
+    try{
+        std::vector<ov::InferRequest> ireqs(imgs_num);
+        std::generate(ireqs.begin(), ireqs.end(), [&]{
+            return compiled_model_ptr->create_infer_request();
+        });
+
+        // Fill Input data for ireqs
+        for(int i=0; i<imgs_num; ++i){
+            // 如果图像是nullptr 怎么处理？？   
+            cv::Mat tmp_img = cv::Mat(cv::Size(width, height), CV_8UC3, imgs_ptr_arr[i]);
+
+            cv::Mat resized_img;
+            double scale_ratio;
+            int left_padding_cols, top_padding_rows;
+            resizeImageAsYOLO(*compiled_model_ptr, tmp_img, resized_img, scale_ratio, left_padding_cols, top_padding_rows);
+
+            cv::Mat blob_img = cv::dnn::blobFromImage(resized_img, 1.0/255.0, cv::Size(input_width, input_height), 0.0, true, false, CV_32F);
+            auto input_tensor = ireqs[i].get_tensor(compiled_model_ptr->inputs()[0]);
+            float* data = input_tensor.data<float>();        
+            std::memcpy(data, blob_img.data, blob_img.total()*sizeof(float));
+
+            // ireqs[i].start_async();
+            ireqs[i].infer();
+        }
+
+        // for(ov::InferRequest& ireq:ireqs){
+        //     ireq.wait();
+        // }
+   
+        for(auto& ireq:ireqs){
+            const ov::Tensor& output_tensor = ireq.get_output_tensor();
+            
+            const float* output_buff = output_tensor.data<const float>();
+            cv::Mat m = cv::Mat(cv::Size(output_width, output_height), CV_32F, const_cast<float*>(output_buff));
+
+            vector<DET_RES> out_res_vec;        
+            postProcess(score_threshold, m, 1.0, 0, 0, model_type, out_res_vec);        
+            results->push_back(out_res_vec);
+        }
+
+    }catch(std::exception& ex){
+        std::cout << ex.what() << std::endl;
+    }
+
+    return results;
 }

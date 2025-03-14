@@ -3,6 +3,8 @@
 #include <filesystem>
 #include <regex>
 
+// #define PADDCLS
+// #define PADDDET
 // #define SKLEARN
 // #define CLS
 #define DET 
@@ -23,6 +25,44 @@ void createDirectoryIfNotExists(const std::string& dirPath) {
         std::cout << "Save Dir Already Exists: " << dirPath << std::endl;
     }
 }
+
+#ifdef PADDDET
+void testPaddleClsInfer(){
+    std::cout << "----- Test Paddle Det API ------" << std::endl;    
+    char msg[1024]; 
+    printInfo(msg, 1024);
+    std::cout << msg;
+    }
+#endif
+
+#ifdef PADDCLS
+void testPaddleClsInfer(){
+    std::cout << "----- Test Paddle Cls API ------" << std::endl;    
+    char msg[1024]; 
+    printInfo(msg, 1024);
+    std::cout << msg;
+
+    string model_dir = R"(E:\le_paddlex\crack_cls\output_hgnetv2_b1\best_model\inference)";    // HGNet
+    // string model_dir = R"(E:\le_paddlex\crack_cls\output_lcnetv2_small\best_model\inference)";   // LCNet  
+    // string model_dir = R"(E:\le_paddlex\crack_cls\output_ResNet50_vd\best_model\inference)";   // ResNet 
+    auto model_ptr = initModel(model_dir.c_str(), 2, msg);
+    printf("model_ptr: %p\n", model_ptr);
+
+
+    string img_pth = R"(E:\DataSets\tuffy_crack\pdx_clas\images\20241027061702533.jpg)";
+    doInferenceByImgPth(img_pth.c_str(), model_ptr, msg);
+
+    auto start = std::chrono::high_resolution_clock::now();
+    doInferenceByImgPth(img_pth.c_str(), model_ptr, msg);
+    auto end = std::chrono::high_resolution_clock::now();
+    auto spend = std::chrono::duration_cast<std::chrono::milliseconds>(end-start);
+    printf("Paddle Class Inference Cost: %d ms\n", spend.count());
+
+    cv::Mat img = cv::imread(img_pth);
+    doInferenceBy3chImg(img.ptr(), img.rows, img.cols, model_ptr, msg);
+
+}
+#endif
 
 #ifdef DET_OPVNO
 void testOpenvinoDetInfer(){
@@ -46,30 +86,25 @@ void testSklearnInfer(){
     std::cin >> onnx_pth;
     // std::string onnx_pth = R"(D:\share_dir\cell_corner_curve\src\random_forest_5feats.onnx)";
     void* session_p = initModel(onnx_pth.c_str());
-    std::cout << "========== First Inference =============" << std::endl;
-    Point points[5] = {Point(1,1), Point(2,2), Point(3,3)};
-    CLS_RES result = doInference(session_p, Point(), points, 5);
+    std::cout << "========== First Inference lb =============" << std::endl;
+    Point points[5] = {Point(3.718,-1.332), Point(3.082,-1.789), Point(2.496,-2.308), Point(1.981,-2.897), Point(1.535,-3.536)};
+    CLS_RES result = doInference(session_p, Point(9.803, -9.484), points, 5);
     result.print();
 
-    std::cout << "========== Second Inference =============" << std::endl;
-    Point points2[5] = {Point(1,1), Point(2,2), Point(3,3), Point(3,4), Point(5,5)};
-    result = doInference(session_p, Point(), points2, 5);
+    std::cout << "========== Second Inference lt =============" << std::endl;
+    Point points2[5] = {Point(1.306,3.438), Point(1.775,2.782), Point(2.29,2.157), Point(2.913,1.639), Point(0,0)};
+    result = doInference(session_p, Point(9.553, 9.878), points2, 5);
     result.print();  
 
-    std::cout << "========== Third Inference =============" << std::endl;
-    Point points3[5] = {Point(-6.54, 8.16), Point(-7.19, 7.64), Point(-7.77, 7.04), Point(-8.26, 6.36), Point()};
-    result = doInference(session_p, Point(), points3, 5);
+    std::cout << "========== Third Inference rb =============" << std::endl;
+    Point points3[5] = {Point(-1.392, -3.307), Point(-1.891, -2.657), Point(-2.473, -2.079), Point(-3.069, -1.511), Point()};
+    result = doInference(session_p, Point(-9.566, -9.796), points3, 5);
     result.print();   
 
-    std::cout << "========== Forth Inference =============" << std::endl;
-    Point points4[5] = {Point(-6.14, 8.32), Point(-6.80, 7.86), Point(-7.40, 7.32), Point(-7.94, 6.72), Point(-8.40, 6.06)};
-    result = doInference(session_p, Point(), points4, 5);
+    std::cout << "========== Forth Inference rt =============" << std::endl;
+    Point points4[5] = {Point(-1.392, -3.307), Point(-1.891, -2.657), Point(-2.473, -2.079), Point(-3.069, -1.511), Point()};
+    result = doInference(session_p, Point(-9.566, -9.796), points4, 5);
     result.print();   
-
-    std::cout << "========== Fifth Inference =============" << std::endl;
-    Point points5[5] = {Point(1,1), Point(0,2), Point(3,3), Point(3,4), Point(50,50)};
-    result = doInference(session_p, Point(), points5, 5);
-    result.print(); 
 }
 #endif
 
@@ -98,13 +133,13 @@ void testClsInfer(){
     createDirectoryIfNotExists(save_dir_ok);
 
     // 选择推理模式： 单张推理 or 遍历文件夹
+    std::string img_pth;
     string infer_mode;
     cout << "Select Inference Mode: 1: one pic to infer; 2: loop directory to infer: ";
     cin >> infer_mode;
     if(infer_mode == "1"){
         // std::string img_pth = R"(E:\DataSets\edge_crack\tmp\test\_489_725_202406291324116_0.jpg)";
         // 接口 2：指定图片路径推理
-        std::string img_pth;
         while(true){
             cout << "Input Image Path: ";
             cin >> img_pth;   
@@ -165,19 +200,19 @@ void testClsInfer(){
         cout<< "Wrong Input: " << infer_mode << " Only Support: 1: one pic to infer; 2: loop directory to infer;\n";
     }
 
-    // // 接口 3：传图片指针推理
-    // cv::Mat img = cv::imread(img_pth);
-    // CLS_RES res = doInferenceBy3chImg(img.data, img.rows, img.cols, model_ptr, msg);
-    // cout << msg << endl;
-    // cout << "Class: " << res.cls << " Confidence: " << res.confidence << endl;
-    // std::string image_dir{R"(../test_images)"};
-    // for(const auto& img_pth : std::filesystem::directory_iterator(image_dir)){
-    //     cout << img_pth.path().string() << endl;
-    //     cv::Mat img = cv::imread(img_pth.path().string());
-    //     CLS_RES res = doInferenceBy3chImg(img.data, img.rows, img.cols, model_ptr, msg);
-    //     cout << msg << endl;
-    //     cout << "Class: " << res.cls << " Confidence: " << res.confidence << endl;
-    // }
+    // 接口 3：传图片指针推理
+    cv::Mat img = cv::imread(img_pth);
+    CLS_RES res = doInferenceBy3chImg(img.data, img.rows, img.cols, model_ptr, msg);
+    cout << msg << endl;
+    cout << "Class: " << res.cls << " Confidence: " << res.confidence << endl;
+    std::string image_dir{R"(../test_images)"};
+    for(const auto& img_pth : std::filesystem::directory_iterator(image_dir)){
+        cout << img_pth.path().string() << endl;
+        cv::Mat img = cv::imread(img_pth.path().string());
+        CLS_RES res = doInferenceBy3chImg(img.data, img.rows, img.cols, model_ptr, msg);
+        cout << msg << endl;
+        cout << "Class: " << res.cls << " Confidence: " << res.confidence << endl;
+    }
 }
 
 void imageEnhance(){
@@ -226,11 +261,6 @@ void imageEnhance(){
 void testDetInfer(){
     cout << "----- Test Detection API -----" << endl;
     // 接口 1：模型初始化
-    // // 产品区间检测
-    // string onnx_pth = R"(D:\share_dir\cell_det\workdir\runs\detect\det_s_freeze10_sgd\weights\best.onnx)";  // det cell yolov8
-    // bool use_nms = true;
-    // std::string img_pth = R"(E:\my_depoly\bin\test_images\det_cell_test3.jpg)";
-
     string onnx_pth{};
     cout << "Onnx Model Path: ";
     cin >> onnx_pth; // R"(D:\share_dir\pd_edge_crack\workdir\det_crack\yolom_freeze9_sgd_aug6\weights\yolov8_det02.onnx)";
@@ -245,10 +275,11 @@ void testDetInfer(){
     char msg[10240];
     std::memset(msg, '\0', 10240);
     void* model_ptr = initModel(onnx_pth.data(), msg);
-    // cout << msg << endl;
+    cout << msg << endl;
 
     // 接口 2：指定图片路径推理
     cout << ">>>>>>>>>>>>> Inference by image path <<<<<<<<<<<<<<<<<<<" << endl; 
+    for(int i{}; i<10; i++){
     size_t det_num;
     auto start = std::chrono::high_resolution_clock::now();
     DET_RES* result2 = doInferenceByImgPth(img_pth.c_str(), model_ptr, nullptr, 0.3f, model_type, det_num, msg);
@@ -256,15 +287,16 @@ void testDetInfer(){
     std::chrono::duration<double, std::milli> spend = end -start;
     cout << msg << endl;
 
-    cv::Mat org_img = cv::imread(img_pth);
-    for(size_t i{0}; i<det_num; ++i){
-        cout << "Got Detection Res: " << result2[i].get_info() << endl;        
-        cv::rectangle(org_img, cv::Rect2d(cv::Point2d(result2[i].tl_x, result2[i].tl_y), cv::Point2d(result2[i].br_x, result2[i].br_y)), cv::Scalar(0, 255, 0), 20);
-    }
+    // cv::Mat org_img = cv::imread(img_pth);
+    // for(size_t i{0}; i<det_num; ++i){
+    //     cout << "Got Detection Res: " << result2[i].get_info() << endl;        
+    //     cv::rectangle(org_img, cv::Rect2d(cv::Point2d(result2[i].tl_x, result2[i].tl_y), cv::Point2d(result2[i].br_x, result2[i].br_y)), cv::Scalar(0, 255, 0), 20);
+    // }
     cout << "Cost: " << spend.count() << "ms" << endl;
-    cv::resize(org_img, org_img, cv::Size(), 0.2, 0.2);
-    cv::imshow("Test", org_img);
-    cv::waitKey(0);
+    }
+    // cv::resize(org_img, org_img, cv::Size(), 0.2, 0.2);
+    // cv::imshow("Test", org_img);
+    // cv::waitKey(0);
 
     // // 接口 3：传图片指针推理
     // cout << ">>>>>>>>>>>>> Inference by image pointer <<<<<<<<<<<<<<<<<<<" << endl; 
@@ -322,18 +354,78 @@ void testDetInfer(){
     // }
 
 
-    // // 接口 4：图片分块多线程推理  单线程 1700+ms
-    // auto tick = std::chrono::high_resolution_clock::now();
-    // cv::Mat img_cell = cv::imread(img_pth);
-    // size_t det_num{0};
-    // int patch_size = 1000;
-    // int overlap_size = 100;
-    // DET_RES* res = doInferenceBy3chImgPatches(img_cell.data, img_cell.rows, img_cell.cols, patch_size, overlap_size, model_ptr, 0.5f, use_nms, det_num, msg);
-    // auto tock = std::chrono::high_resolution_clock::now();
-    // std::chrono::duration<double, std::milli> spend = tock-tick;
-    // cout << "cost time: " << spend.count() << "ms" << endl;
-    // for(int i =0; i<det_num; ++i){
-    //     cout << res[i].get_info() << endl;
+    // 接口 4：图片分块多线程推理  单线程 1700+ms
+    // string onnx_pth{};
+    // cout << "Onnx Model Path: ";
+    // cin >> onnx_pth; // R"(D:\share_dir\pd_edge_crack\workdir\det_crack\yolom_freeze9_sgd_aug6\weights\yolov8_det02.onnx)";
+    // std::string model_type_s{};
+    // cout << "Model Type: ";
+    // cin >> model_type_s;
+    // short model_type = std::stoi(model_type_s);
+    // std::string img_dir{}; // R"(E:\DataSets\edge_crack\cut_patches_0825\tmp\20240628092227_1371.jpg)";
+    // cout << "Image Dir: ";
+    // cin >> img_dir;
+
+    // 同步推理与异步推理对比   20pcs 异步快 300+ms  异步推理有bug！！！
+    // char msg[10240];
+    // std::memset(msg, '\0', 10240);
+    // std::string v11_onnx = R"(D:\share_dir\impression_detect\workdir\yolov11\det_dent_gold_scf\yolo11s_sgd3\weights\best.onnx)";
+    // std::string img_dir = R"(E:\DataSets\dents_det\org_D1\gold_scf\cutPatches640\NG)";
+    // void* model_ptrv11 = initModel(v11_onnx.data(), msg);
+    // size_t det_num{};
+    // size_t img_num{20};
+    // size_t img_counter{};
+
+    // std::vector<DET_RES*> sync_res{};
+    // auto sync_tick = std::chrono::high_resolution_clock::now();
+    // for(auto f:std::filesystem::directory_iterator(img_dir)){
+    //     if(f.path().extension() != ".jpg") 
+    //         continue;
+
+    //     std::cout << "img_name: " << f.path().filename() << std::endl;
+    //     sync_res.push_back(doInferenceByImgPth(f.path().string().c_str(), model_ptrv11, nullptr, 0.3f, 11, det_num, msg));
+    //     if(++img_counter>=img_num) break;
+    // }
+    // auto sync_tock = std::chrono::high_resolution_clock::now();
+    // std::chrono::duration<double, std::milli> sync_spend = sync_tock - sync_tick;
+    // cout << "cost time of sync inference: " << sync_spend.count() << "ms" << endl;
+    // for(int i{}; i<sync_res.size(); ++i){
+    //     std::cout << i << " " << sync_res[i]->get_info() << std::endl;
+    // }
+
+    // std::vector<uchar*> img_vec;
+    // size_t img_rows{}, img_cols{};
+    // img_counter = 0;
+    // for( auto f : std::filesystem::directory_iterator(img_dir)){
+    //     if(f.path().extension() != ".jpg") 
+    //         continue;
+    //     std::cout << "img_name: " << f.path().filename() << std::endl;
+    //     cv::Mat* im = new cv::Mat(cv::imread(f.path().string(), cv::ImreadModes::IMREAD_COLOR));
+    //     img_rows = im->rows;
+    //     img_cols = im->cols;
+    //     img_vec.push_back(im->ptr());
+
+    //     if(++img_counter>=img_num)
+    //         break;
+    // }     
+
+    // auto async_tick = std::chrono::high_resolution_clock::now();
+    // void* res = doInferenceBy3chImgPatches(img_vec.data(), img_num, img_rows, img_cols, model_ptrv11, 0.1f, 11, msg);
+    // auto async_tock = std::chrono::high_resolution_clock::now();
+    // std::chrono::duration<double, std::milli> async_spend = async_tock - async_tick;
+    // cout << "cost time of async inference: " << async_spend.count() << "ms" << endl;
+
+    // auto vec = static_cast<std::vector<std::vector<DET_RES>>* >(res);
+
+    // for( int i{}; i<vec->size(); ++i){        
+    //     for (auto e:(*vec)[i]){
+    //         std::cout<< i << " " << e.get_info() << std::endl;
+    //     }
+
+    // }
+
+    // for(size_t i{}; i<img_vec.size(); ++i){
+    //     delete img_vec[i];
     // }
     // cout << msg << endl;
 }
@@ -350,6 +442,10 @@ void main(){
     // std::cout << "opencv version: " << CV_VERSION << std::endl;
 
     std::cout << "Start App: "<< std::endl;
+
+    #ifdef PADDCLS
+    testPaddleClsInfer();
+    #endif
 
     #ifdef DET_OPVNO
     testOpenvinoDetInfer();

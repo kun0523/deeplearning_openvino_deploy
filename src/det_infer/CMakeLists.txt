@@ -4,6 +4,7 @@ set(CMAKE_PREFIX_PATH D:/opencv/opencv/build)
 find_package(OpenCV REQUIRED)
 
 set(CMAKE_PREFIX_PATH E:/cpp_packages/w_openvino_toolkit_windows_2024.2.0.15519.5c0f38f83f6_x86_64/runtime/cmake)
+# set(CMAKE_PREFIX_PATH D:\\envs\\tmp_ultr\\Lib\\site-packages\\openvino\\cmake)
 find_package(OpenVINO REQUIRED)
 
 add_library(${PROJECT_NAME} SHARED inference.cxx)

@@ -2,10 +2,11 @@
 
 #define DEBUG
 
-void* initModel(const char* onnx_pth, char* msg, size_t msg_len){
+void* initModel(const char* onnx_pth, char* msg){    
 #ifdef DEBUG
     std::fstream fs{"./debug_log.txt", std::ios_base::app};
     fs << ov::get_openvino_version() << "\n";
+    std::cout << ov::get_openvino_version() << std::endl;
 #endif
     std::stringstream msg_ss;
     msg_ss << "Call <initModel> Func\n";
@@ -20,12 +21,13 @@ void* initModel(const char* onnx_pth, char* msg, size_t msg_len){
             msg_ss << item.first << " : " << item.second << "\n";
             #ifdef DEBUG
                 fs << item.first << " : " << item.second << "\n";
+                std::cout << item.first << " : " << item.second << std::endl;
             #endif
         }
-    }catch(std::exception ex){
+    }catch(std::exception &ex){
         msg_ss << "OpenVINO Error!\n";
         msg_ss << ex.what() << "\n";
-        strcpy_s(msg, msg_len, msg_ss.str().c_str());
+        strcpy_s(msg, msg_ss.str().length()+2, msg_ss.str().c_str());
         #ifdef DEBUG
             fs << ex.what() << "\n";
             fs.close();
@@ -35,16 +37,21 @@ void* initModel(const char* onnx_pth, char* msg, size_t msg_len){
     
     try{
         // 创建模型
-        compiled_model_ptr = new ov::CompiledModel(core.compile_model(onnx_pth, "CPU"));
+        auto model = core.read_model(onnx_pth);        
+        compiled_model_ptr = new ov::CompiledModel(core.compile_model(model, "CPU", 
+                                                                      ov::hint::performance_mode(ov::hint::PerformanceMode::THROUGHPUT), 
+                                                                      ov::hint::num_requests(4), 
+                                                                      ov::auto_batch_timeout(100)));
         msg_ss << "Create Compiled Model Success. Got Model Pointer: " << compiled_model_ptr << "\n";
         #ifdef DEBUG
             fs << "Create Compiled Model Success. Got Model Pointer: " << compiled_model_ptr << "\n";            
+            std::cout << "Create Compiled Model Success. Got Model Pointer: " << compiled_model_ptr << std::endl;            
         #endif
-    }catch(std::exception ex){
+    }catch(std::exception &ex){
         msg_ss << "Create Model Failed\n";
         msg_ss << "Error Message: " << ex.what() << "\n";
 
-        strcpy_s(msg, msg_len, msg_ss.str().c_str());
+        strcpy_s(msg, msg_ss.str().length()+2, msg_ss.str().c_str());
         #ifdef DEBUG
             fs << "Create Model Failed\n";
             fs << "Error Message: " << ex.what() << "\n";
@@ -53,14 +60,14 @@ void* initModel(const char* onnx_pth, char* msg, size_t msg_len){
         return compiled_model_ptr;
     }
     
-    strcpy_s(msg, msg_len, msg_ss.str().c_str());
+    strcpy_s(msg, msg_ss.str().length()+2, msg_ss.str().c_str());
     #ifdef DEBUG
         fs.close();
     #endif
     return compiled_model_ptr;
 }
 
-void warmUp(void* compiled_model, char* msg, size_t msg_len){
+void warmUp(void* compiled_model, char* msg){
     std::stringstream msg_ss;
     msg_ss << "Call <warmUp> Func ...\n";
 
@@ -81,10 +88,10 @@ void warmUp(void* compiled_model, char* msg, size_t msg_len){
         msg_ss << "Error Message: " << ex.what() << endl;
     }
 
-    strcpy_s(msg, msg_len, msg_ss.str().c_str());
+    strcpy_s(msg, msg_ss.str().length()+2, msg_ss.str().c_str());
 }
 
-CLS_RES doInferenceByImgPth(const char* image_pth, void* compiled_model, const int* roi, char* msg, size_t msg_len){
+CLS_RES doInferenceByImgPth(const char* image_pth, void* compiled_model, const int* roi, char* msg){
 #ifdef DEBUG
     std::fstream fs{"./debug_log.txt", std::ios_base::app};
     fs << "Got Image path: " << image_pth << "\n";
@@ -99,10 +106,10 @@ CLS_RES doInferenceByImgPth(const char* image_pth, void* compiled_model, const i
     fs << "ROI Image size: " << img_part.size << "\n";
     fs.close();
 #endif
-    return doInferenceByImgMat(img_part, compiled_model, msg, msg_len);
+    return doInferenceByImgMat(img_part, compiled_model, msg);
 }
 
-CLS_RES doInferenceBy3chImg(uchar* image_arr, const std::int32_t height, const std::int32_t width, void* compiled_model, char* msg, size_t msg_len){
+CLS_RES doInferenceBy3chImg(uchar* image_arr, const std::int32_t height, const std::int32_t width, void* compiled_model, char* msg){
 #ifdef DEBUG
     std::fstream fs{"./debug_log.txt", std::ios_base::app};
     fs << "Got Image size: " << width << "x" << height << "\n";
@@ -114,10 +121,10 @@ CLS_RES doInferenceBy3chImg(uchar* image_arr, const std::int32_t height, const s
     fs << "Convert Image size: " << img.size << "\n";
     fs.close();
 #endif
-    return doInferenceByImgMat(img, compiled_model, msg, msg_len);
+    return doInferenceByImgMat(img, compiled_model, msg);
 }
 
-CLS_RES doInferenceByImgMat(const cv::Mat& img_mat, void* compiled_model, char* msg, size_t msg_len){
+CLS_RES doInferenceByImgMat(const cv::Mat& img_mat, void* compiled_model, char* msg){
 #ifdef DEBUG
     std::fstream fs{"./debug_log.txt", std::ios_base::app};
     fs << "Call <doInferenceByImgMat> Func\n";
@@ -148,16 +155,35 @@ CLS_RES doInferenceByImgMat(const cv::Mat& img_mat, void* compiled_model, char* 
     #endif
 
     auto start = std::chrono::high_resolution_clock::now();
+    // TODO: 图片前处理还有问题！！！
+    // cv::Mat resized_img;
+    // cv::resize(img_mat, resized_img, cv::Size(input_tensor_shape[2], input_tensor_shape[3]), 0, 0, cv::INTER_AREA);
+    // float* input_data = (float*)resized_img.data;
+    // const ov::Tensor input_tensor = ov::Tensor(model_ptr->input().get_element_type(), model_ptr->input().get_shape(), input_data);
+
+    // cv::cvtColor(img_mat, resized_img, cv::COLOR_BGR2RGB);
+    // cv::resize(img_mat, resized_img, cv::Size(input_tensor_shape[2], input_tensor_shape[3]), 0, 0, cv::INTER_AREA);
+    // cv::Mat float_img;
+    // resized_img.convertTo(float_img, CV_32F);
+    // cv::Scalar mean, stdev;
+    // cv::meanStdDev(float_img, mean, stdev);
+    // std::cout << mean << std::endl;
+    // std::cout << stdev << std::endl;
+    // cv::Mat normalized_img = (float_img - mean) / stdev / 1.0;
+    // std::cout << cv::typeToString(normalized_img.type()) << std::endl;
+    // std::cout << normalized_img.at<double>(0, 0) << " " << normalized_img.at<double>(0, 3) << " " << normalized_img.at<double>(0, 6) << std::endl;
+    // cv::Mat blob_img = cv::dnn::blobFromImage(normalized_img, 1.0, cv::Size(input_tensor_shape[2], input_tensor_shape[3]), 0.0, true, true, CV_32F);
+
     cv::Mat blob_img = cv::dnn::blobFromImage(img_mat, 1.0/255.0, cv::Size(input_tensor_shape[2], input_tensor_shape[3]), 0.0, true, false, CV_32F);
-    ov::Tensor inputensor;
-    opencvMat2Tensor(blob_img, *model_ptr, inputensor);
+    ov::Tensor input_tensor;
+    opencvMat2Tensor(blob_img, *model_ptr, input_tensor);
     auto img_preprocess_done = std::chrono::high_resolution_clock::now();
     #ifdef DEBUG
         fs << "Image Convert to Tensor success \n";          
     #endif
 
     ov::InferRequest infer_request = model_ptr->create_infer_request();
-    infer_request.set_input_tensor(inputensor);
+    infer_request.set_input_tensor(input_tensor);
     infer_request.infer();
     auto infer_done = std::chrono::high_resolution_clock::now();
 
@@ -183,7 +209,8 @@ CLS_RES doInferenceByImgMat(const cv::Mat& img_mat, void* compiled_model, char* 
 
     string t = getTimeNow();
     msg_ss << "[" << t << "]" << "---- Inference Over ----\n";
-    strcpy_s(msg, msg_len, msg_ss.str().c_str());
+
+    strcpy_s(msg, msg_ss.str().length()+2, msg_ss.str().c_str());
 
     #ifdef DEBUG
         fs << "[" << t << "]" << "---- Inference Over ----\n";
@@ -212,7 +239,7 @@ char* opencvMat2Tensor(cv::Mat& img_mat, ov::CompiledModel& compiled_model, ov::
     return "Convert Success";
 }
 
-int doInferenceBatchImgs(const char* image_dir, int height, int width, void* compiled_model, const int* roi, const int roi_len, char* msg, size_t msg_len){
+int doInferenceBatchImgs(const char* image_dir, int height, int width, void* compiled_model, const int* roi, const int roi_len, char* msg){
     return 1;
     ov::CompiledModel* model_ptr = static_cast<ov::CompiledModel*>(compiled_model);
     
@@ -250,12 +277,11 @@ int doInferenceBatchImgs(const char* image_dir, int height, int width, void* com
     auto output_tensor = infer_request.get_output_tensor();
     const float* output_buff = output_tensor.data<const float>();
     cv::Mat m = cv::Mat(cv::Size(batch_num, preds_num), CV_32F, const_cast<float*>(output_buff));
-    // std::cout <<"scores: " << m << std::endl;
     cv::Point max_pos;
     double max_score;
     cv::minMaxLoc(m, 0, &max_score, 0, &max_pos);
     msg_ss << " max score: " << max_score << " max index: " << max_pos.y << endl;
-    strcpy_s(msg, msg_len, msg_ss.str().c_str());
+    strcpy_s(msg, msg_ss.str().length()+2, msg_ss.str().c_str());
     return max_pos.y;
 }
  

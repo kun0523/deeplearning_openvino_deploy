@@ -83,19 +83,19 @@ MY_DLL DET_RES* doInferenceByImgPth(const char* img_pth, void* model_ptr, const 
 MY_DLL DET_RES* doInferenceBy3chImg(uchar* image_arr, const int height, const int width, void* model_ptr, const float score_threshold, const short model_type, size_t& det_num, char* msg);
 
 
-/// @brief 在指定ROI区域后的图，尺寸依旧很大，可进行逐个小patch推理  并行推理有问题，还不开放
-/// @param image_arr 
-/// @param height 
-/// @param width 
-/// @param patch_size 
-/// @param overlap_size 
-/// @param model_ptr 
-/// @param score_threshold 
+/// TODO: 速度差不多，但是精度有差异。。。先看一下fastdeploy怎么做的，学一学再改
+/// @brief 传入多个相同尺寸的小图像指针数组，返回各个小图像的检测结果  
+/// @param imgs_ptr_arr  图像指针数组 
+/// @param imgs_num  数组中有几个图像
+/// @param height 图像高度
+/// @param width  图像宽度
+/// @param model_ptr 模型指针
+/// @param score_threshold 过滤的分数阈值
 /// @param model_type 指定使用的模型版本 v8 v10 v11 
-/// @param det_num 
-/// @param msg 
-/// @return
-DET_RES* doInferenceBy3chImgPatches(uchar* image_arr, const int height, const int width, const int patch_size, const int overlap_size, void* model_ptr, const float score_threshold, const short model_type, size_t& det_num, char* msg);
+/// @param msg Log信息
+/// @return  返回 vector<vector<DET_RES>>* 指针
+void* doInferenceBy3chImgPatches(uchar** imgs_ptr_arr, const size_t imgs_num, const int height, const int width, 
+                                    void* model_ptr, const float score_threshold, const short model_type, char* msg);
 
 
 void warmUp(void* model_ptr, std::stringstream& msg_ss_);

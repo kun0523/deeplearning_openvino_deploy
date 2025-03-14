@@ -33,6 +33,7 @@ void* initModel(const char* model_path){
 
         // -------- Step 4. Configure preprocessing --------
 
+        // TODO 前处理有问题！！！！
         ov::preprocess::PrePostProcessor ppp(model);
 
         // 1) Set input tensor information:
@@ -48,7 +49,7 @@ void* initModel(const char* model_path){
         ppp.input().model().set_layout("NCHW");
         // 5) Set output tensor information:
         // - precision of tensor is supposed to be 'f32'
-        ppp.output().tensor().set_element_type(ov::element::i8);
+        ppp.output().tensor().set_element_type(ov::element::f32);
 
         // 6) Apply preprocessing modifying the original 'model'
         model = ppp.build();
