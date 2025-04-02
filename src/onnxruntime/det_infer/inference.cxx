@@ -1,5 +1,11 @@
 #include "inference.h"
 
+using std::endl;
+using std::string;
+using std::vector;
+
+void* gModelPtr = nullptr;
+
 int DET_RES::get_area(){
     int width = std::abs(tl_x - br_x);
     int height = std::abs(tl_y - br_y);
@@ -91,11 +97,10 @@ void run(const char* image_path, const char* onnx_path) {
 
     std::cout << dout.size << std::endl;
     double scale_r = std::min(frame.rows/640.0, frame.cols/640.0);
-    std::vector<DET_RES> result;
-    postProcess(0.5f, dout, scale_r, result);
-    std::cout << result.size() << std::endl;
-    for(auto& i:result){
-        std::cout << i.cls << " " << i.confidence << std::endl;
+    int det_num{};
+    DET_RES* result = postProcess(0.5f, dout, scale_r, det_num);
+    for(int i{}; i<det_num; ++i){
+        std::cout << result[i].get_info() << std::endl;
     }
 
     // session_options.release();
@@ -103,22 +108,22 @@ void run(const char* image_path, const char* onnx_path) {
     return ;
 }
 
-void* initModel(const char* onnx_pth, char* msg){
+void initModel(const char* model_pth, char* msg){
     // OnnxRuntime 第一次推理和后续推理的耗时差不多，所以不做 WarmUp
-    std::string onnxpath{onnx_pth};
+    std::string onnxpath{model_pth};
     std::wstring modelPath = std::wstring(onnxpath.begin(), onnxpath.end());
     try{
         ENV_PTR = new Ort::Env(ORT_LOGGING_LEVEL_WARNING, "Classification");
-        auto session_ptr = new Ort::Session(*ENV_PTR, modelPath.c_str(), Ort::SessionOptions());
+        gModelPtr = new Ort::Session(*ENV_PTR, modelPath.c_str(), Ort::SessionOptions());
         std::cout << "Init Session Success." << std::endl;
-        return session_ptr;
+        return;
     }catch(const std::exception& e){
         std::cout << e.what() << std::endl;
-        return nullptr;
+        return;
     }
 }
 
-MY_DLL DET_RES* doInferenceByImgPth(const char* img_pth, void* model_ptr, const int* roi, const float score_threshold, size_t& det_num, char* msg){
+MY_DLL DET_RES* doInferenceByImgPth(const char* img_pth, const int* roi, const float score_threshold, int& det_num, char* msg){
     std::stringstream msg_ss;
 
     try{
@@ -129,21 +134,21 @@ MY_DLL DET_RES* doInferenceByImgPth(const char* img_pth, void* model_ptr, const 
         else
             img.copyTo(img_part); 
 
-        return doInferenceByImgMat(img_part, model_ptr, score_threshold, det_num, msg);
+        return doInferenceByImgMat(img_part, score_threshold, det_num, msg);
     }catch(const std::exception& e){
         msg_ss << e.what() << std::endl;
         std::cout << e.what() << std::endl;
     }
 }
 
-DET_RES* doInferenceBy3chImg(uchar* image_arr, const int height, const int width, void* model_ptr, const float score_threshold, size_t& det_num, char* msg){
+DET_RES* doInferenceBy3chImg(uchar* image_arr, const int height, const int width, const float score_threshold, int& det_num, char* msg){
     std::stringstream msg_ss;
     // 如果 width 和 height 与实际图像不符，出来的图像会扭曲，但不会报错
     cv::Mat img(cv::Size(width, height), CV_8UC3, image_arr);
-    return doInferenceByImgMat(img, model_ptr, 0.5f, det_num, msg);
+    return doInferenceByImgMat(img, score_threshold, det_num, msg);
 }
 
-DET_RES* doInferenceByImgMat(const cv::Mat& img_mat, void* model_ptr, const float score_threshold, size_t& det_num, char* msg){
+DET_RES* doInferenceByImgMat(const cv::Mat& img_mat, const float score_threshold, int& det_num, char* msg){
 #ifdef DEBUG_ORT_
     std::fstream fs{"./debug_log.txt", std::ios_base::app};
     fs << "[" << getTimeNow() << "]" << "Call <doInferenceByImgMat> Func\n";
@@ -151,9 +156,9 @@ DET_RES* doInferenceByImgMat(const cv::Mat& img_mat, void* model_ptr, const floa
 
     std::stringstream msg_ss;
     try{
-        if(model_ptr==nullptr)
+        if(gModelPtr==nullptr)
             throw std::runtime_error("Error Model Pointer Convert Failed!");
-        Ort::Session* session_ptr = static_cast<Ort::Session*>(model_ptr);
+        Ort::Session* session_ptr = static_cast<Ort::Session*>(gModelPtr);
 
         std::vector<std::string> input_node_names;
         std::vector<std::string> output_node_names;
@@ -207,24 +212,19 @@ DET_RES* doInferenceByImgMat(const cv::Mat& img_mat, void* model_ptr, const floa
         catch (const std::exception& e) {
             msg_ss << e.what() << std::endl;
         }
-
-        std::cout << msg_ss.str() << std::endl;
-
+        
         // output data
         const float* pdata = ort_outputs[0].GetTensorMutableData<float>();
         cv::Mat dout(output_h, output_w, CV_32F, (float*)pdata);
         double scale_r = std::min((double)input_h/img_mat.rows, (double)input_w/img_mat.cols);
-        std::vector<DET_RES> result;
-        postProcess(score_threshold, dout, scale_r, result);
-        det_num = result.size();
+        return postProcess(score_threshold, dout, scale_r, det_num);
 
-        return result.data();
         // msg_ss << "cls: " << maxP.x << " score: " << maxScore << std::endl;
         // strcpy_s(msg, msg_ss.str().length()+1, msg_ss.str().c_str());
     }catch(const std::exception& e){
         msg_ss << e.what() << std::endl;
         strcpy_s(msg, msg_ss.str().length(), msg_ss.str().c_str());
-        return {};
+        return new DET_RES[1];
     }
 
 #ifdef DEBUG_ORT_
@@ -234,12 +234,12 @@ DET_RES* doInferenceByImgMat(const cv::Mat& img_mat, void* model_ptr, const floa
 #endif
 }
 
-void destroyModel(void* model_ptr){
+void destroyModel(){
 #ifdef DEBUG_ORT_
     std::fstream fs{"./debug_log.txt", std::ios_base::app};
 #endif
-    if(model_ptr!=nullptr){
-        Ort::Session* session_ptr = static_cast<Ort::Session*>(model_ptr);
+    if(gModelPtr!=nullptr){
+        Ort::Session* session_ptr = static_cast<Ort::Session*>(gModelPtr);
         session_ptr->release();        
         ENV_PTR->release();
     }
@@ -261,7 +261,7 @@ std::string getTimeNow() {
     return ss.str(); 
 }
 
-void* preProcess(const Ort::Session* infer_session, const cv::Mat& org_img, cv::Mat& blob){
+void preProcess(const Ort::Session* infer_session, const cv::Mat& org_img, cv::Mat& blob){
     double org_h = org_img.rows, org_w = org_img.cols;
     // 前提假设，模型只有一个输入节点
     auto input_tensor_shape = infer_session->GetInputTypeInfo(0).GetTensorTypeAndShapeInfo().GetShape();
@@ -276,7 +276,7 @@ void* preProcess(const Ort::Session* infer_session, const cv::Mat& org_img, cv::
     blob = cv::dnn::blobFromImage(boarded_img, 1/255.0, cv::Size(board_w, board_h), cv::Scalar(0,0,0), true, false);
 }
 
-void postProcess(const float conf_threshold, cv::Mat& det_result_mat, const double& scale_ratio_, std::vector<DET_RES>& out_vec){
+DET_RES* postProcess(const float conf_threshold, cv::Mat& det_result_mat, const double& scale_ratio_, int& det_num){
     det_result_mat = det_result_mat.t();
     size_t pred_num = det_result_mat.cols;
 
@@ -303,6 +303,9 @@ void postProcess(const float conf_threshold, cv::Mat& det_result_mat, const doub
     }
     cv::dnn::NMSBoxes(boxes, scores, conf_threshold, iou_threshold, indices);
 
+    det_num = indices.size();
+    DET_RES* result = new DET_RES[det_num];
+    int counter{};
     for(auto it=indices.begin(); it!=indices.end(); ++it){
         float score = scores[*it];
         if (score < conf_threshold) continue;
@@ -312,8 +315,16 @@ void postProcess(const float conf_threshold, cv::Mat& det_result_mat, const doub
         tmp.y /= scale_ratio_;
         tmp.width /= scale_ratio_;
         tmp.height /= scale_ratio_;
-        out_vec.emplace_back(tmp, cls, score);     
+        // out_vec.emplace_back(tmp, cls, score);     
+
+        result[counter].tl_x = tmp.tl().x;
+        result[counter].tl_y = tmp.tl().y;
+        result[counter].br_x = tmp.br().x;
+        result[counter].br_y = tmp.br().y;
+        result[counter].cls = cls;
+        result[counter].confidence = score;
+        ++counter;
     }
 
-    return;
+    return result;
 }

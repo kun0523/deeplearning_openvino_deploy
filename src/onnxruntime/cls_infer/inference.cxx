@@ -1,5 +1,7 @@
 #include "inference.h"
 
+void* gModelPtr = nullptr;
+
 void printInfo(){
     std::cout << "OnnxRuntime Classification Inference Demo" << std::endl;
 }
@@ -90,22 +92,22 @@ void run(const char* image_path, const char* onnx_path) {
     return ;
 }
 
-void* initModel(const char* onnx_pth, char* msg){
+void initModel(const char* onnx_pth, char* msg){
     // OnnxRuntime 第一次推理和后续推理的耗时差不多，所以不做 WarmUp
     std::string onnxpath{onnx_pth};
     std::wstring modelPath = std::wstring(onnxpath.begin(), onnxpath.end());
     try{
-        auto session_ptr = new Ort::Session(Ort::Env(ORT_LOGGING_LEVEL_ERROR, "Classification"), modelPath.c_str(), Ort::SessionOptions());
+        gModelPtr = new Ort::Session(Ort::Env(ORT_LOGGING_LEVEL_ERROR, "Classification"), modelPath.c_str(), Ort::SessionOptions());
         std::cout << "Init Session Success." << std::endl;
-        return session_ptr;
+        return;
     }catch(const std::exception& e){
         std::cout << e.what() << std::endl;
-        return nullptr;
+        return;
     }
 }
 
 
-CLS_RES doInferenceByImgPth(const char* image_pth, void* model_ptr, const int* roi, char* msg){
+CLS_RES doInferenceByImgPth(const char* image_pth, const int* roi, char* msg){
     std::stringstream msg_ss;
     CLS_RES result(-1, -1);
 
@@ -117,7 +119,7 @@ CLS_RES doInferenceByImgPth(const char* image_pth, void* model_ptr, const int* r
         else
             img.copyTo(img_part); 
 
-        return doInferenceByImgMat(img_part, model_ptr, msg);
+        return doInferenceByImgMat(img_part, msg);
     }catch(const std::exception& e){
         msg_ss << e.what() << std::endl;
         std::cout << e.what() << std::endl;
@@ -125,15 +127,15 @@ CLS_RES doInferenceByImgPth(const char* image_pth, void* model_ptr, const int* r
     return CLS_RES(-1, -1);
 }
 
-CLS_RES doInferenceBy3chImg(uchar* image_arr, const int height, const int width, void* model_ptr, char* msg){
+CLS_RES doInferenceBy3chImg(uchar* image_arr, const int height, const int width, char* msg){
     std::stringstream msg_ss;
     CLS_RES result(-1, -1);
     // 如果 width 和 height 与实际图像不符，出来的图像会扭曲，但不会报错
     cv::Mat img(cv::Size(width, height), CV_8UC3, image_arr);
-    return doInferenceByImgMat(img, model_ptr, msg);
+    return doInferenceByImgMat(img, msg);
 }
 
-CLS_RES doInferenceByImgMat(const cv::Mat& img_mat, void* model_ptr, char* msg){
+CLS_RES doInferenceByImgMat(const cv::Mat& img_mat, char* msg){
 #ifdef DEBUG_ORT_
     std::fstream fs{"./debug_log.txt", std::ios_base::app};
     fs << "[" << getTimeNow() << "]" << "Call <doInferenceByImgMat> Func\n";
@@ -144,7 +146,7 @@ CLS_RES doInferenceByImgMat(const cv::Mat& img_mat, void* model_ptr, char* msg){
 
     try{
 
-        Ort::Session* session_ptr = static_cast<Ort::Session*>(model_ptr);
+        Ort::Session* session_ptr = static_cast<Ort::Session*>(gModelPtr);
 
         if(session_ptr==nullptr)
             throw std::runtime_error("Error Model Pointer Convert Failed!");
@@ -186,14 +188,7 @@ CLS_RES doInferenceByImgMat(const cv::Mat& img_mat, void* model_ptr, char* msg){
         msg_ss << "input: " << input_node_names[0] << " output: " << output_node_names[0] << std::endl;
 
         // format frame
-        int w = img_mat.cols;
-        int h = img_mat.rows;
-        int _max = std::max(h, w);
-        cv::Mat image = cv::Mat::zeros(cv::Size(_max, _max), CV_8UC3);
-        cv::Rect roi(0, 0, w, h);
-        img_mat.copyTo(image(roi));
-
-        cv::Mat blob = cv::dnn::blobFromImage(image, 1 / 255.0, cv::Size(input_w, input_h), cv::Scalar(0, 0, 0), true, false);
+        cv::Mat blob = cv::dnn::blobFromImage(img_mat, 1.0 / 255.0, cv::Size(input_w, input_h), 0.0, true, false);
         size_t tpixels = input_h * input_w * 3;
         std::array<int64_t, 4> input_shape_info{ 1, 3, input_h, input_w };
 
@@ -235,12 +230,12 @@ CLS_RES doInferenceByImgMat(const cv::Mat& img_mat, void* model_ptr, char* msg){
     return result;
 }
 
-void destroyModel(void* model_ptr){
+void destroyModel(){
 #ifdef DEBUG_ORT_
     std::fstream fs{"./debug_log.txt", std::ios_base::app};
 #endif
-    if(model_ptr!=nullptr){
-        Ort::Session* session_ptr = static_cast<Ort::Session*>(model_ptr);
+    if(gModelPtr!=nullptr){
+        Ort::Session* session_ptr = static_cast<Ort::Session*>(gModelPtr);
         session_ptr->release();        
     }
 #ifdef DEBUG_ORT_

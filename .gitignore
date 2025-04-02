@@ -30,6 +30,9 @@
 *.exe
 *.out
 *.app
+*.csv
+*.xls
+*_log.txt
 
 build/
 bin/

@@ -1,12 +1,12 @@
-#ifndef OPENVINOCLS_H
-#define OPENVINOCLS_H
+#ifndef TRTCLS_H
+#define TRTCLS_H
 
 #include <iostream>
 #include <vector>
 #include <functional>
 #include <algorithm>
-#include <openvino/openvino.hpp>
 #include <opencv2/opencv.hpp>
+#include <NvInfer.h>
 #include <fstream>
 #include <filesystem>
 #include <chrono>
@@ -17,7 +17,7 @@
 #define MY_DLL extern "C" __declspec(dllexport)
 
 MY_DLL void printInfo();
-MY_DLL void run();
+void run();
 
 struct CLS_RES{
     short cls{-1};
@@ -26,11 +26,11 @@ struct CLS_RES{
     CLS_RES(short cls_, double confidence_):cls(cls_), confidence(confidence_) {}
 };
 
-/// @brief 加载模型文件 .onnx，初始化模型
-/// @param onnx_pth onnx模型文件路径字符串指针
-/// @param msg 消息字符数组，用于写入信息
+/// @brief 加载模型文件 .engine，初始化模型
+/// @param model_pth onnx模型文件路径字符串指针
+/// @param msg 消息字符数组，用于写入信息 默认字符数组长度 1024
 /// @return 
-MY_DLL void initModel(const char* onnx_pth, char* msg);
+MY_DLL void initModel(const char* model_pth, char* msg);
 
 /// @brief 根据图片名+ROI 进行标签分类
 /// @param image_pth 图片路径
@@ -47,8 +47,8 @@ MY_DLL CLS_RES doInferenceByImgPth(const char* image_pth, const int* roi, char* 
 /// @return 返回分类标签
 MY_DLL CLS_RES doInferenceBy3chImg(uchar* image_arr, const int height, const int width, char* msg);
 
-void warmUp();
-MY_DLL void destroyModel(void* model_ptr);
+MY_DLL void destroyModel();
+void warmUp(char* msg);
 CLS_RES doInferenceByImgMat(const cv::Mat& img_mat, char* msg);
 std::string getTimeNow();
 

@@ -1,5 +1,7 @@
 #include "inference.h"
 
+void* gModelPtr = nullptr;
+
 int SEG_RES::get_area(){
     int width = std::abs(tl_x - br_x);
     int height = std::abs(tl_y - br_y);
@@ -22,25 +24,10 @@ SEG_RES::~SEG_RES(){
     }
 }
 
-void* initModel(const char* onnx_pth, char* msg){
+void initModel(const char* onnx_pth, char* msg){
     std::stringstream msg_ss;
     msg_ss << "Call <initModel> Func\n";
     ov::Core core;  
-    ov::CompiledModel* compiled_model_ptr = nullptr;  
-
-    try{   
-        // 验证openvino环境是否正确     
-        auto devices = core.get_available_devices();
-        auto version = core.get_versions(core.get_available_devices()[0]);        
-        for(auto& item:version){
-            msg_ss << item.first << " : " << item.second << "\n";
-        }
-    }catch(std::exception ex){
-        msg_ss << "OpenVINO Error!\n";
-        msg_ss << ex.what() << "\n";
-        strcpy_s(msg, msg_ss.str().length()+1, msg_ss.str().c_str());
-        return compiled_model_ptr;
-    }   
 
     try{      
         // auto model = core.read_model(R"(E:\le_trt\models\yolo11s01_int8_openvino_model\yolo11s01.xml)", 
@@ -49,53 +36,53 @@ void* initModel(const char* onnx_pth, char* msg){
         //                                                             ov::hint::performance_mode(ov::hint::PerformanceMode::THROUGHPUT), 
         //                                                             ov::hint::num_requests(4), ov::auto_batch_timeout(1000)));                       
 
-        compiled_model_ptr = new ov::CompiledModel(core.compile_model(onnx_pth, "CPU", 
+        gModelPtr = new ov::CompiledModel(core.compile_model(onnx_pth, "CPU", 
                                                                     ov::hint::performance_mode(ov::hint::PerformanceMode::THROUGHPUT), 
                                                                     ov::hint::num_requests(4), ov::auto_batch_timeout(1000)));                       
-        msg_ss << "Create Compiled model Success. Got Model Pointer: " << compiled_model_ptr << "\n";
+        msg_ss << "Create Compiled model Success. Got Model Pointer: " << gModelPtr << "\n";
     }catch(std::exception ex){
         msg_ss << "Create Model Failed\n";
         msg_ss << "Error Message: " << ex.what() << "\n";
 
         strcpy_s(msg, msg_ss.str().length()+1, msg_ss.str().c_str());
-        return compiled_model_ptr;
+        return;
     }
 
-    warmUp(compiled_model_ptr, msg_ss); 
+    warmUp(); 
     strcpy_s(msg, msg_ss.str().length()+1, msg_ss.str().c_str());
-    return compiled_model_ptr;
+    return;
 }
 
-void warmUp(void* model_ptr, std::stringstream& msg_ss_){
-    msg_ss_ << "Call <warmUp> Func ...\n";
+void warmUp(){
+    // msg_ss_ << "Call <warmUp> Func ...\n";
     char msg[1024]{};
 
     try{
-        msg_ss_ << "WarmUp Model Pointer: " << model_ptr << "\n";        
+        // msg_ss_ << "WarmUp Model Pointer: " << model_ptr << "\n";        
         cv::Mat blob_img = cv::Mat::ones(cv::Size(1024, 1024), CV_32FC3);
         int det_num;
-        doInferenceByImgMat(blob_img, model_ptr, 0.5f, det_num, msg);
-        msg_ss_ << msg;
-        msg_ss_ << "WarmUp Complete.";
+        doInferenceByImgMat(blob_img, 0.5f, det_num, msg);
+        // msg_ss_ << msg;
+        // msg_ss_ << "WarmUp Complete.";
     }catch(std::exception ex){
-        msg_ss_ << "Catch Error in Warmup Func\n";
-        msg_ss_ << "Error Message: " << ex.what() << endl;
+        // msg_ss_ << "Catch Error in Warmup Func\n";
+        // msg_ss_ << "Error Message: " << ex.what() << endl;
     }
 }
 
-SEG_RES* doInferenceBy3chImg(uchar* image_arr, const int height, const int width, void* model_ptr, const float score_threshold, int& det_num, char* msg){
+SEG_RES* doInferenceBy3chImg(uchar* image_arr, const int height, const int width, const float score_threshold, int& det_num, char* msg){
     // 对三通道的图进行推理
     cv::Mat img(cv::Size(width, height), CV_8UC3, image_arr);
-    return doInferenceByImgMat(img, model_ptr, score_threshold, det_num, msg);
+    return doInferenceByImgMat(img, score_threshold, det_num, msg);
 }
 
-SEG_RES* doInferenceByImgMat(const cv::Mat& img_mat, void* compiled_model, const float score_threshold, int& det_num, char* msg){
+SEG_RES* doInferenceByImgMat(const cv::Mat& img_mat, const float score_threshold, int& det_num, char* msg){
 
     std::stringstream msg_ss;
     msg_ss << "Call <doInferenceByImgMat> Func\n";
 
-    ov::CompiledModel* model_ptr = static_cast<ov::CompiledModel*>(compiled_model);
-    if(model_ptr==nullptr){
+    ov::CompiledModel* model_ptr = static_cast<ov::CompiledModel*>(gModelPtr);
+    if(gModelPtr==nullptr){
         msg_ss << "Error, Got nullptr, Model pointer convert failed\n";
         return nullptr;
     }else{
@@ -137,7 +124,7 @@ SEG_RES* doInferenceByImgMat(const cv::Mat& img_mat, void* compiled_model, const
 }
 
 
-SEG_RES* doInferenceByImgPth(const char* img_pth, void* model_ptr, const int* roi, const float score_threshold, int& det_num, char* msg){
+SEG_RES* doInferenceByImgPth(const char* img_pth, const int* roi, const float score_threshold, int& det_num, char* msg){
     // 对三通道的图进行推理
     // auto start = std::chrono::high_resolution_clock::now();
     cv::Mat org_img = cv::imread(img_pth, cv::IMREAD_COLOR);
@@ -152,7 +139,7 @@ SEG_RES* doInferenceByImgPth(const char* img_pth, void* model_ptr, const int* ro
     // std::cout << "====== Read Image cost: " << spend.count() << "ms" << std::endl;
 
     // auto infer_start = std::chrono::high_resolution_clock::now();
-    return doInferenceByImgMat(img_part, model_ptr, score_threshold, det_num, msg);
+    return doInferenceByImgMat(img_part, score_threshold, det_num, msg);
     // auto infer_stop = std::chrono::high_resolution_clock::now();
     // std::chrono::duration<double, std::milli> infer_spend = infer_stop - infer_start;
     // std::cout << "====== Inference cost: " << infer_spend.count() << "ms" << std::endl;

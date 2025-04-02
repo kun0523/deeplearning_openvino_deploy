@@ -1,5 +1,12 @@
 #include "inference.h"
 
+using std::string;
+using std::vector;
+using std::cout;
+using std::endl;
+
+void* gModelPtr = nullptr;
+
 void printInfo(){
 #ifdef DEBUG_STAT
     std::fstream fs{"./debug_log.txt", std::ios_base::app};
@@ -60,7 +67,7 @@ void run(){
     std::cout << "inference done" << std::endl;
 }
 
-void* initModel(const char* onnx_pth, char* msg){    
+void initModel(const char* onnx_pth, char* msg){    
     // OpenVINO 第一次推理耗时比较久，所以要做 WarmUp
 #ifdef DEBUG_STAT
     std::fstream fs{"./debug_log.txt", std::ios_base::app};
@@ -70,19 +77,18 @@ void* initModel(const char* onnx_pth, char* msg){
     std::stringstream msg_ss;
     msg_ss << "Call <initModel> Func\n";
     ov::Core core;
-    void* compiled_model_ptr = nullptr;
 
     try{
         // 创建模型
         auto model = core.read_model(onnx_pth);        
-        compiled_model_ptr = new ov::CompiledModel(core.compile_model(model, "CPU", 
+        gModelPtr = new ov::CompiledModel(core.compile_model(model, "CPU", 
                                                                       ov::hint::performance_mode(ov::hint::PerformanceMode::THROUGHPUT), 
                                                                       ov::hint::num_requests(4), 
                                                                       ov::auto_batch_timeout(100)));
-        msg_ss << "Create Compiled Model Success. Got Model Pointer: " << compiled_model_ptr << "\n";
+        msg_ss << "Create Compiled Model Success. Got Model Pointer: " << gModelPtr << "\n";
         #ifdef DEBUG_STAT
-            fs << "Create Compiled Model Success. Got Model Pointer: " << compiled_model_ptr << "\n";            
-            std::cout << "Create Compiled Model Success. Got Model Pointer: " << compiled_model_ptr << std::endl;            
+            fs << "Create Compiled Model Success. Got Model Pointer: " << gModelPtr << "\n";            
+            std::cout << "Create Compiled Model Success. Got Model Pointer: " << gModelPtr << std::endl;            
         #endif
     }catch(std::exception &ex){
         msg_ss << "Create Model Failed\n";
@@ -94,18 +100,18 @@ void* initModel(const char* onnx_pth, char* msg){
             fs << "Error Message: " << ex.what() << "\n";
             fs.close();
         #endif
-        return compiled_model_ptr;
+        return;
     }
 
-    warmUp(compiled_model_ptr);
+    warmUp();
     strcpy_s(msg, msg_ss.str().length()+2, msg_ss.str().c_str());
     #ifdef DEBUG_STAT
         fs.close();
     #endif
-    return compiled_model_ptr;
+    return;
 }
 
-CLS_RES doInferenceByImgPth(const char* image_pth, void* compiled_model, const int* roi, char* msg){
+CLS_RES doInferenceByImgPth(const char* image_pth, const int* roi, char* msg){
 #ifdef DEBUG_STAT
     std::fstream fs{"./debug_log.txt", std::ios_base::app};
     fs << getTimeNow() << " Got Image path: " << image_pth << "\n";
@@ -125,7 +131,7 @@ CLS_RES doInferenceByImgPth(const char* image_pth, void* compiled_model, const i
             fs << getTimeNow() << " ROI Image size: " << img_part.size << "\n";
             fs.close();
         #endif
-        return doInferenceByImgMat(img_part, compiled_model, msg);
+        return doInferenceByImgMat(img_part, msg);
 
     }catch(const std::exception& e){
         std::cerr << e.what() << std::endl;
@@ -135,7 +141,7 @@ CLS_RES doInferenceByImgPth(const char* image_pth, void* compiled_model, const i
     }
 }
 
-CLS_RES doInferenceBy3chImg(uchar* image_arr, const std::int32_t height, const std::int32_t width, void* compiled_model, char* msg){
+CLS_RES doInferenceBy3chImg(uchar* image_arr, const std::int32_t height, const std::int32_t width, char* msg){
 #ifdef DEBUG_STAT
     std::fstream fs{"./debug_log.txt", std::ios_base::app};
 #endif
@@ -146,17 +152,17 @@ CLS_RES doInferenceBy3chImg(uchar* image_arr, const std::int32_t height, const s
     fs << "Convert Image size: " << img.size << "\n";
     fs.close();
 #endif
-    return doInferenceByImgMat(img, compiled_model, msg);
+    return doInferenceByImgMat(img, msg);
 }
 
-CLS_RES doInferenceByImgMat(const cv::Mat& img_mat, void* compiled_model, char* msg){
+CLS_RES doInferenceByImgMat(const cv::Mat& img_mat, char* msg){
 #ifdef DEBUG_STAT
     std::fstream fs{"./debug_log.txt", std::ios_base::app};
     fs << "[" << getTimeNow() << "]" << "Call <doInferenceByImgMat> Func\n";
 #endif
     std::stringstream msg_ss;
     
-    ov::CompiledModel* model_ptr = static_cast<ov::CompiledModel*>(compiled_model);
+    ov::CompiledModel* model_ptr = static_cast<ov::CompiledModel*>(gModelPtr);
     if(model_ptr==nullptr){
         msg_ss << "Error, Got nullptr, Model pointer convert failed\n";
         #ifdef DEBUG_STAT
@@ -211,8 +217,8 @@ CLS_RES doInferenceByImgMat(const cv::Mat& img_mat, void* compiled_model, char* 
     return ret;
 }
 
-void warmUp(void* compiled_model){
-    ov::CompiledModel* model_ptr = static_cast<ov::CompiledModel*>(compiled_model);
+void warmUp(){
+    ov::CompiledModel* model_ptr = static_cast<ov::CompiledModel*>(gModelPtr);
     // 前提假设模型只有一个输入节点
     ov::Shape input_tensor_shape = model_ptr->input().get_shape();
     cv::Mat img_mat = cv::Mat::ones(cv::Size(224,224), CV_8UC3);
@@ -224,12 +230,12 @@ void warmUp(void* compiled_model){
     infer_request.infer();
 }
 
-void destroyModel(void* compiled_model){
+void destroyModel(){
 #ifdef DEBUG_STAT
     std::fstream fs{"./debug_log.txt", std::ios_base::app};
 #endif
-    if(compiled_model!=nullptr){
-        ov::CompiledModel* model_ptr = static_cast<ov::CompiledModel*>(compiled_model);
+    if(gModelPtr!=nullptr){
+        ov::CompiledModel* model_ptr = static_cast<ov::CompiledModel*>(gModelPtr);
         delete model_ptr;      
     }
 #ifdef DEBUG_STAT
@@ -237,52 +243,7 @@ void destroyModel(void* compiled_model){
 #endif
 }
 
-int doInferenceBatchImgs(const char* image_dir, int height, int width, void* compiled_model, const int* roi, const int roi_len, char* msg){
-    ov::CompiledModel* model_ptr = static_cast<ov::CompiledModel*>(compiled_model);
-    
-    ov::Shape input_tensor_shape = model_ptr->input().get_shape();
-    vector<cv::Mat> image_list;
 
-    auto start = std::chrono::high_resolution_clock::now();
-    for(const auto& f:std::filesystem::directory_iterator(image_dir)){
-        cv::Mat tmp_img = cv::imread(f.path().string());
-        cv::Mat resized_img;
-        double scale_ratio;
-        int left_padding_cols, top_padding_rows;
-        // resizeImageAsYOLO(*model_ptr, tmp_img, resized_img);
-        image_list.push_back(tmp_img);
-    }
-
-    cv::Mat blob_img = cv::dnn::blobFromImages(image_list, 1.0/255.0, cv::Size(input_tensor_shape[2], input_tensor_shape[3]), 0.0, true, false, CV_32F);
-    ov::Tensor inputensor;
-    // opencvMat2Tensor(blob_img, *model_ptr, inputensor);
-    auto img_preprocess_done = std::chrono::high_resolution_clock::now();
-    
-    ov::InferRequest infer_request = model_ptr->create_infer_request();
-    infer_request.set_input_tensor(inputensor);
-    infer_request.infer();
-    auto infer_done = std::chrono::high_resolution_clock::now();
-
-    std::chrono::duration<double, std::milli> img_preprocess_cost = img_preprocess_done - start;
-    std::chrono::duration<double, std::milli> inference_cost = infer_done - img_preprocess_done;
-    std::stringstream msg_ss;
-    msg_ss << "Image Preprocess cost: " << img_preprocess_cost.count() << "ms";
-    msg_ss << " Infer cost: " << inference_cost.count() << "ms";
-
-    ov::Shape output_tensor_shape = model_ptr->output().get_shape();
-    size_t batch_num=output_tensor_shape[0], preds_num=output_tensor_shape[1];
-    auto output_tensor = infer_request.get_output_tensor();
-    const float* output_buff = output_tensor.data<const float>();
-    cv::Mat m = cv::Mat(cv::Size(batch_num, preds_num), CV_32F, const_cast<float*>(output_buff));
-    cv::Point max_pos;
-    double max_score;
-    cv::minMaxLoc(m, 0, &max_score, 0, &max_pos);
-    msg_ss << " max score: " << max_score << " max index: " << max_pos.y << std::endl;
-    strcpy_s(msg, msg_ss.str().length()+2, msg_ss.str().c_str());
-    // return max_pos.y;
-    return -1;
-}
- 
 std::string getTimeNow() {
     std::stringstream ss;
     // 获取当前时间点

@@ -76,6 +76,7 @@ void testDet(){
     cout << msg << endl;
     cout << "model pointer: " << model_ptr << endl;
 
+    
 
 }
 

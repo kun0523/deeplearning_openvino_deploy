@@ -1,5 +1,8 @@
 #include "inference.h"
 
+Ort::Env* ENV_PTR=nullptr;
+void* gModelPtr = nullptr;
+
 int SEG_RES::get_area(){
     int width = std::abs(tl_x - br_x);
     int height = std::abs(tl_y - br_y);
@@ -114,22 +117,22 @@ SEG_RES* run(const char* image_path, const char* onnx_path, int& det_num) {
 }
 
 
-void* initModel(const char* onnx_pth, char* msg){
+void initModel(const char* model_pth, char* msg){
     // OnnxRuntime 第一次推理和后续推理的耗时差不多，所以不做 WarmUp
-    std::string onnxpath{onnx_pth};
+    std::string onnxpath{model_pth};
     std::wstring modelPath = std::wstring(onnxpath.begin(), onnxpath.end());
     try{
         ENV_PTR = new Ort::Env(ORT_LOGGING_LEVEL_WARNING, "Classification");
-        auto session_ptr = new Ort::Session(*ENV_PTR, modelPath.c_str(), Ort::SessionOptions());
+        gModelPtr = new Ort::Session(*ENV_PTR, modelPath.c_str(), Ort::SessionOptions());
         std::cout << "Init Session Success." << std::endl;
-        return session_ptr;
+        return;
     }catch(const std::exception& e){
         std::cout << e.what() << std::endl;
-        return nullptr;
+        return;
     }
 }
 
-MY_DLL SEG_RES* doInferenceByImgPth(const char* img_pth, void* model_ptr, const int* roi, const float score_threshold, int& det_num, char* msg){
+MY_DLL SEG_RES* doInferenceByImgPth(const char* img_pth, const int* roi, const float score_threshold, int& det_num, char* msg){
     std::stringstream msg_ss;
 
     try{
@@ -140,21 +143,21 @@ MY_DLL SEG_RES* doInferenceByImgPth(const char* img_pth, void* model_ptr, const 
         else
             img.copyTo(img_part); 
 
-        return doInferenceByImgMat(img_part, model_ptr, score_threshold, det_num, msg);
+        return doInferenceByImgMat(img_part, score_threshold, det_num, msg);
     }catch(const std::exception& e){
         msg_ss << e.what() << std::endl;
         std::cout << e.what() << std::endl;
     }
 }
 
-SEG_RES* doInferenceBy3chImg(uchar* image_arr, const int height, const int width, void* model_ptr, const float score_threshold, int& det_num, char* msg){
+SEG_RES* doInferenceBy3chImg(uchar* image_arr, const int height, const int width, const float score_threshold, int& det_num, char* msg){
     std::stringstream msg_ss;
     // 如果 width 和 height 与实际图像不符，出来的图像会扭曲，但不会报错
     cv::Mat img(cv::Size(width, height), CV_8UC3, image_arr);
-    return doInferenceByImgMat(img, model_ptr, 0.5f, det_num, msg);
+    return doInferenceByImgMat(img, 0.5f, det_num, msg);
 }
 
-SEG_RES* doInferenceByImgMat(const cv::Mat& img_mat, void* model_ptr, const float score_threshold, int& det_num, char* msg){
+SEG_RES* doInferenceByImgMat(const cv::Mat& img_mat, const float score_threshold, int& det_num, char* msg){
 #ifdef DEBUG_ORT_
     std::fstream fs{"./debug_log.txt", std::ios_base::app};
     fs << "[" << getTimeNow() << "]" << "Call <doInferenceByImgMat> Func\n";
@@ -162,9 +165,9 @@ SEG_RES* doInferenceByImgMat(const cv::Mat& img_mat, void* model_ptr, const floa
 
     std::stringstream msg_ss;
     try{
-        if(model_ptr==nullptr)
+        if(gModelPtr==nullptr)
             throw std::runtime_error("Error Model Pointer Convert Failed!");
-        Ort::Session* session_ptr = static_cast<Ort::Session*>(model_ptr);
+        Ort::Session* session_ptr = static_cast<Ort::Session*>(gModelPtr);
 
         std::vector<std::string> input_node_names;
         std::vector<std::string> output_node_names;
@@ -247,67 +250,13 @@ SEG_RES* doInferenceByImgMat(const cv::Mat& img_mat, void* model_ptr, const floa
 #endif
 }
 
-void warmUp(Ort::Session& model){
-    std::vector<std::string> input_node_names;
-    std::vector<std::string> output_node_names;
-    size_t numInputNodes = model.GetInputCount();
-    size_t numOutputNodes = model.GetOutputCount();
-    Ort::AllocatorWithDefaultOptions allocator;
-    input_node_names.reserve(numInputNodes);
 
-    // 获取输入信息
-    int input_w{}, input_h{};
-    for (int i = 0; i < numInputNodes; i++) {
-        auto input_name = model.GetInputNameAllocated(i, allocator);
-        input_node_names.push_back(input_name.get());
-        Ort::TypeInfo input_type_info = model.GetInputTypeInfo(i);
-        auto input_tensor_info = input_type_info.GetTensorTypeAndShapeInfo();
-        auto input_dims = input_tensor_info.GetShape();
-        input_w = input_dims[3];
-        input_h = input_dims[2];
-        // msg_ss << "input format: NxCxHxW = " << input_dims[0] << "x" << input_dims[1] << "x" << input_dims[2] << "x" << input_dims[3] << std::endl;
-    }
-
-    // 获取输出信息  1*84*8400
-    int output_h = 0;
-    int output_w = 0;
-    Ort::TypeInfo output_type_info = model.GetOutputTypeInfo(0);
-    auto output_tensor_info = output_type_info.GetTensorTypeAndShapeInfo();
-    auto output_dims = output_tensor_info.GetShape();
-    output_h = output_dims[1]; // 84
-    output_w = output_dims[2]; // 8400
-    // msg_ss << "output format : HxW = " << output_h << "x" << output_w << std::endl;
-    for (int i = 0; i < numOutputNodes; i++) {
-        auto out_name = model.GetOutputNameAllocated(i, allocator);
-        output_node_names.push_back(out_name.get());
-    }
-    // msg_ss << "input: " << input_node_names[0] << " output: " << output_node_names[0] << std::endl;
-
-    cv::Mat blob;
-    preProcess(&model, cv::Mat(640, 640, CV_8UC3, cv::Scalar(1)), blob);
-    size_t tpixels = input_h * input_w * 3;
-    std::array<int64_t, 4> input_shape_info{ 1, 3, input_h, input_w };
-
-    // set input data and inference
-    auto allocator_info = Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeCPU);
-    Ort::Value input_tensor_ = Ort::Value::CreateTensor<float>(allocator_info, blob.ptr<float>(), tpixels, input_shape_info.data(), input_shape_info.size());
-    const std::array<const char*, 1> inputNames = { input_node_names[0].c_str() };
-    const std::array<const char*, 2> outNames = { output_node_names[0].c_str(), output_node_names[1].c_str() };
-    std::vector<Ort::Value> ort_outputs;
-    try {
-        ort_outputs = model.Run(Ort::RunOptions{ nullptr }, inputNames.data(), &input_tensor_, 1, outNames.data(), outNames.size());
-    }
-    catch (const std::exception& e) {
-        std::cout << e.what() << std::endl;
-    }
-}
-
-void destroyModel(void* model_ptr){
+void destroyModel(){
 #ifdef DEBUG_ORT_
     std::fstream fs{"./debug_log.txt", std::ios_base::app};
 #endif
-    if(model_ptr!=nullptr){
-        Ort::Session* session_ptr = static_cast<Ort::Session*>(model_ptr);
+    if(gModelPtr!=nullptr){
+        Ort::Session* session_ptr = static_cast<Ort::Session*>(gModelPtr);
         session_ptr->release();        
         ENV_PTR->release();
     }
@@ -329,7 +278,7 @@ std::string getTimeNow() {
     return ss.str(); 
 }
 
-void* preProcess(const Ort::Session* infer_session, const cv::Mat& org_img, cv::Mat& blob){
+void preProcess(const Ort::Session* infer_session, const cv::Mat& org_img, cv::Mat& blob){
     double org_h = org_img.rows, org_w = org_img.cols;
     // 前提假设，模型只有一个输入节点
     auto input_tensor_shape = infer_session->GetInputTypeInfo(0).GetTensorTypeAndShapeInfo().GetShape();
