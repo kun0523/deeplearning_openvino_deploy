@@ -192,13 +192,14 @@ void initModel(const char* model_pth, char* msg){
 
 
 SEG_RES* doInferenceByImgMat(const cv::Mat& img_mat, const float score_threshold, int& det_num, char* msg){
-    #ifdef DEBUG
-        std::fstream fs{"./debug_log.txt", std::ios_base::app};
-        fs << "Call <doInferenceByImgMat> Func\n";
-    #endif
-        std::stringstream msg_ss;
-        msg_ss << "Call <doInferenceByImgMat> Func\n";
-        
+#ifdef DEBUG
+    std::fstream fs{"./debug_log.txt", std::ios_base::app};
+    fs << "Call <doInferenceByImgMat> Func\n";
+#endif
+    std::stringstream msg_ss;
+    msg_ss << "Call <doInferenceByImgMat> Func\n";
+    
+
     void* buffers[3] = { NULL, NULL, NULL };  // 一个输入 两个输出
     std::vector<float> pred;
     std::vector<float> proto;
@@ -234,7 +235,6 @@ SEG_RES* doInferenceByImgMat(const cv::Mat& img_mat, const float score_threshold
 
     // 创建cuda流
     cudaStreamCreate(&stream);
-
     // 第一次推理12ms，后续的推理3ms左右
     cv::Mat tensor;
     preProcess(static_cast<ICudaEngine*>(gEngine), img_mat, tensor);
@@ -254,8 +254,6 @@ SEG_RES* doInferenceByImgMat(const cv::Mat& img_mat, const float score_threshold
     predmat = predmat.t();
     cv::Mat protomat(proto_c, proto_h*proto_w, CV_32F, (float*)proto.data());
     // std::cout << "predmat: " << predmat.size << " protomat: " << protomat.size << std::endl;
-
-    double r = std::min((double)input_h/img_mat.rows, (double)input_w/img_mat.cols);
     SEG_RES* res = postProcess(score_threshold, predmat, protomat, cv::Size(img_mat.cols, img_mat.rows), cv::Size(input_w, input_h), det_num);
 
     // 同步结束 释放资源
@@ -298,7 +296,7 @@ void warmUp(char* msg){
     msg_ss << "Call <warmUp> Func ...\n";
 
     try{        
-        cv::Mat blob_img = cv::Mat::ones(cv::Size(1024, 1024), CV_32FC3);
+        cv::Mat blob_img = cv::Mat::ones(cv::Size(1024, 1024), CV_8UC3);
         int num;
         doInferenceByImgMat(blob_img, 0.5f, num, msg);
         msg_ss << "Inference Done\n" << "WarmUp Complete";
@@ -317,6 +315,7 @@ SEG_RES* doInferenceByImgPth(const char* img_pth, const int* roi, const float sc
 #endif
     cv::Mat img = cv::imread(img_pth, cv::IMREAD_COLOR);
     cv::Mat img_part;
+
     if(roi)
         img_part = img(cv::Rect(cv::Point(roi[0], roi[1]), cv::Point(roi[2], roi[3])));
     else
@@ -356,19 +355,19 @@ std::string getTimeNow() {
 }
 
 void preProcess(const ICudaEngine* engine, const cv::Mat& org_img, cv::Mat& blob){
-    int board_h = engine->getBindingDimensions(0).d[2];
-    int board_w = engine->getBindingDimensions(0).d[3];
+    int input_h = engine->getBindingDimensions(0).d[2];
+    int input_w = engine->getBindingDimensions(0).d[3];
 
     double org_h = org_img.rows, org_w = org_img.cols;
     // 前提假设，模型只有一个输入节点
-    auto boarded_img = cv::Mat(cv::Size(board_w, board_h), CV_8UC3, cv::Scalar(114, 114, 114));
+    auto boarded_img = cv::Mat(cv::Size(input_w, input_h), CV_8UC3, cv::Scalar(114, 114, 114));
 
-    double ratio = std::min((double)board_h/org_h, (double)board_w/org_w);
+    double ratio = std::min((double)input_h/org_h, (double)input_w/org_w);
     cv::Mat resize_img;
     cv::resize(org_img, resize_img, cv::Size(), ratio, ratio, cv::INTER_LINEAR);
     resize_img.copyTo(boarded_img(cv::Rect(cv::Point(0,0), cv::Point(resize_img.cols, resize_img.rows))));
 
-    blob = cv::dnn::blobFromImage(boarded_img, 1/255.0, cv::Size(board_w, board_h), cv::Scalar(0,0,0), true, false);
+    blob = cv::dnn::blobFromImage(boarded_img, 1/255.0, cv::Size(input_w, input_h), cv::Scalar(0,0,0), true, false);
 }
 
 SEG_RES* postProcess(const float conf_threshold, const cv::Mat& pred_mat, const cv::Mat& proto_mat, const cv::Size& org_size, const cv::Size& infer_size, int& det_num){
@@ -379,7 +378,7 @@ SEG_RES* postProcess(const float conf_threshold, const cv::Mat& pred_mat, const 
     vector<int> indices;
     vector<int> class_idx;
     vector<cv::Mat> masks;
-    float tl_x{}, tl_y{}, br_x{}, br_y{}, cx{}, cy{}, w{}, h{}, iou_threshold{0.3f};
+    float tl_x{}, tl_y{}, br_x{}, br_y{}, cx{}, cy{}, w{}, h{}, iou_threshold{0.7f};
 
     for(int row=0; row<pred_mat.rows; ++row){
         const float* ptr = pred_mat.ptr<float>(row);
@@ -401,7 +400,6 @@ SEG_RES* postProcess(const float conf_threshold, const cv::Mat& pred_mat, const 
     cv::dnn::NMSBoxes(boxes, scores, conf_threshold, iou_threshold, indices);
 
     double r = std::min((double)infer_size.height/org_size.height, (double)infer_size.width/org_size.width);
-
     det_num = indices.size();
     SEG_RES* result = new SEG_RES[det_num];
     int counter{};
@@ -417,14 +415,9 @@ SEG_RES* postProcess(const float conf_threshold, const cv::Mat& pred_mat, const 
 
         cv::Mat m = masks[*it];
         cv::Mat mask = m * proto_mat;
-        // std::cout << "mask shape: " << mask.rows << " " << mask.cols << std::endl;
         mask = mask.reshape(1, 160);
-        // std::cout << "after reshape mask shape: " << mask.rows << " " << mask.cols << std::endl;
 
-        // double s = std::min((double)input_h/frame.rows, (double)input_w/frame.cols);
         int n_h = r*org_size.height, n_w = r*org_size.width;
-        // std::cout << "cls: " << cls << std::endl;
-        // std::cout << tmp.tl() << " ||| " << tmp.br() << std::endl;
         cv::resize(mask, mask, infer_size);
         mask = mask(cv::Rect(cv::Point(0,0), cv::Point(n_w, n_h)));
         cv::resize(mask, mask, org_size);

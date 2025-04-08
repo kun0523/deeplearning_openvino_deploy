@@ -153,16 +153,16 @@ void testInferenceSpeed(){
         // R"(E:\DataSets\imageNet\n02086240_Shih-Tzu.JPEG)",  // 1280*1024  78ms
         // R"(E:\le_trt\models\dog.jpg)",  // 500*374  65ms
 
-        R"(E:\le_trt\models\dog.jpg)",
-        R"(E:\le_trt\models\dog.jpg)",
-        R"(E:\le_trt\models\dog.jpg)",
-        R"(E:\le_trt\models\dog.jpg)",
-        R"(E:\le_trt\models\dog.jpg)",
-        R"(E:\le_trt\models\dog.jpg)",
-        R"(E:\le_trt\models\dog.jpg)",
-        R"(E:\le_trt\models\dog.jpg)",
-        R"(E:\le_trt\models\dog.jpg)",
-        R"(E:\le_trt\models\dog.jpg)"
+        R"(D:\envs\ult_py311_cpu\Lib\site-packages\osam\_data\dogs.jpg)",
+        R"(D:\envs\ult_py311_cpu\Lib\site-packages\osam\_data\dogs.jpg)",
+        R"(D:\envs\ult_py311_cpu\Lib\site-packages\osam\_data\dogs.jpg)",
+        R"(D:\envs\ult_py311_cpu\Lib\site-packages\osam\_data\dogs.jpg)",
+        R"(D:\envs\ult_py311_cpu\Lib\site-packages\osam\_data\dogs.jpg)",
+        R"(D:\envs\ult_py311_cpu\Lib\site-packages\osam\_data\dogs.jpg)",
+        R"(D:\envs\ult_py311_cpu\Lib\site-packages\osam\_data\dogs.jpg)",
+        R"(D:\envs\ult_py311_cpu\Lib\site-packages\osam\_data\dogs.jpg)",
+        R"(D:\envs\ult_py311_cpu\Lib\site-packages\osam\_data\dogs.jpg)",
+        R"(D:\envs\ult_py311_cpu\Lib\site-packages\osam\_data\dogs.jpg)"
     };
     std::vector<double> costs{};
     double total_costs{};

@@ -57,7 +57,6 @@ MY_DLL void initModel(const char* model_pth, char* msg);
 
 /// @brief 根据图片名+ROI 进行目标检测
 /// @param img_pth 图片路径
-/// @param model_ptr OpenVINO 模型指针
 /// @param roi 检查区域ROI 整型数组 [p1_x, p1_y, p2_x, p2_y]  ROI=nullptr时直接对全图推理
 /// @param score_threshold 置信度阈值 低于阈值的检测框不返回
 /// @param det_num 返回检测到的目标数量
@@ -70,7 +69,6 @@ MY_DLL SEG_RES* doInferenceByImgPth(const char* img_pth, const int* roi, const f
 /// @param image_arr 图像内存指针 OpenCV BGR 3通道图的指针
 /// @param height 图像高度
 /// @param width 图像宽度
-/// @param model_ptr OpenVINO 模型指针
 /// @param score_threshold 置信度阈值 低于阈值的检测框不返回
 /// @param det_num 返回检测到的目标数量
 /// @param msg 消息字符数组，用于写入信息 默认数组长度1024

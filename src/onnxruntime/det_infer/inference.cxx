@@ -125,6 +125,7 @@ void initModel(const char* model_pth, char* msg){
 
 MY_DLL DET_RES* doInferenceByImgPth(const char* img_pth, const int* roi, const float score_threshold, int& det_num, char* msg){
     std::stringstream msg_ss;
+    // auto start = std::chrono::high_resolution_clock::now();
 
     try{
         cv::Mat img = cv::imread(img_pth);
@@ -134,7 +135,13 @@ MY_DLL DET_RES* doInferenceByImgPth(const char* img_pth, const int* roi, const f
         else
             img.copyTo(img_part); 
 
-        return doInferenceByImgMat(img_part, score_threshold, det_num, msg);
+        // auto infer_start = std::chrono::high_resolution_clock::now();
+        auto result = doInferenceByImgMat(img_part, score_threshold, det_num, msg);
+        // auto infer_stop = std::chrono::high_resolution_clock::now();
+        // std::chrono::duration<double, std::milli> infer_spend = infer_stop - infer_start;
+        // std::chrono::duration<double, std::milli> imgr_spend = infer_start - start;
+        // std::cout << "read image cost: " << imgr_spend.count() << "ms Inference cost: " << infer_spend.count() << "ms" << std::endl;
+        return result;
     }catch(const std::exception& e){
         msg_ss << e.what() << std::endl;
         std::cout << e.what() << std::endl;

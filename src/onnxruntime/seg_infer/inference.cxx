@@ -134,6 +134,7 @@ void initModel(const char* model_pth, char* msg){
 
 MY_DLL SEG_RES* doInferenceByImgPth(const char* img_pth, const int* roi, const float score_threshold, int& det_num, char* msg){
     std::stringstream msg_ss;
+    // auto start = std::chrono::high_resolution_clock::now();
 
     try{
         cv::Mat img = cv::imread(img_pth);
@@ -143,7 +144,14 @@ MY_DLL SEG_RES* doInferenceByImgPth(const char* img_pth, const int* roi, const f
         else
             img.copyTo(img_part); 
 
-        return doInferenceByImgMat(img_part, score_threshold, det_num, msg);
+        // auto infer_start = std::chrono::high_resolution_clock::now();
+        auto result = doInferenceByImgMat(img_part, score_threshold, det_num, msg);
+        // auto infer_stop = std::chrono::high_resolution_clock::now();
+        // std::chrono::duration<double, std::milli> infer_spend = infer_stop - infer_start;
+        // std::chrono::duration<double, std::milli> imgr_spend = infer_start - start;
+        // std::cout << "read image cost: " << imgr_spend.count() << "ms Inference cost: " << infer_spend.count() << "ms" << std::endl;
+        return result;
+    
     }catch(const std::exception& e){
         msg_ss << e.what() << std::endl;
         std::cout << e.what() << std::endl;
@@ -176,28 +184,18 @@ SEG_RES* doInferenceByImgMat(const cv::Mat& img_mat, const float score_threshold
         Ort::AllocatorWithDefaultOptions allocator;
         input_node_names.reserve(numInputNodes);
 
-        // 获取输入信息
-        int input_w{}, input_h{};
-        for (int i = 0; i < numInputNodes; i++) {
-            auto input_name = session_ptr->GetInputNameAllocated(i, allocator);
-            input_node_names.push_back(input_name.get());
-            Ort::TypeInfo input_type_info = session_ptr->GetInputTypeInfo(i);
-            auto input_tensor_info = input_type_info.GetTensorTypeAndShapeInfo();
-            auto input_dims = input_tensor_info.GetShape();
-            input_w = input_dims[3];
-            input_h = input_dims[2];
-            msg_ss << "input format: NxCxHxW = " << input_dims[0] << "x" << input_dims[1] << "x" << input_dims[2] << "x" << input_dims[3] << std::endl;
-        }
+        // 获取输入信息  1x3x640x640
+        auto input_shape = session_ptr->GetInputTypeInfo(0).GetTensorTypeAndShapeInfo().GetShape();
+        int input_h = input_shape[2], input_w = input_shape[3]; 
+        auto input_name = session_ptr->GetInputNameAllocated(0, allocator);
+        input_node_names.push_back(input_name.get());
 
-        // 获取输出信息  1*84*8400
-        int output_h = 0;
-        int output_w = 0;
-        Ort::TypeInfo output_type_info = session_ptr->GetOutputTypeInfo(0);
-        auto output_tensor_info = output_type_info.GetTensorTypeAndShapeInfo();
-        auto output_dims = output_tensor_info.GetShape();
-        output_h = output_dims[1]; // 84
-        output_w = output_dims[2]; // 8400
-        msg_ss << "output format : HxW = " << output_h << "x" << output_w << std::endl;
+        // 获取输出信息  output0 1x116x8400    output1  1x32x160x160
+        auto pred_shape = session_ptr->GetOutputTypeInfo(0).GetTensorTypeAndShapeInfo().GetShape();
+        int pred_h = pred_shape[1], pred_w = pred_shape[2];
+        auto proto_shape = session_ptr->GetOutputTypeInfo(1).GetTensorTypeAndShapeInfo().GetShape();
+        int proto_c = proto_shape[1], proto_h = proto_shape[2], proto_w = proto_shape[3];
+
         for (int i = 0; i < numOutputNodes; i++) {
             auto out_name = session_ptr->GetOutputNameAllocated(i, allocator);
             output_node_names.push_back(out_name.get());
@@ -224,12 +222,12 @@ SEG_RES* doInferenceByImgMat(const cv::Mat& img_mat, const float score_threshold
         // output data
         const float* pred_data = ort_outputs[0].GetTensorMutableData<float>();
         const float* proto_data = ort_outputs[1].GetTensorMutableData<float>();
-        cv::Mat preds(output_h, output_w, CV_32F, (float*)pred_data);
+        cv::Mat preds(pred_h, pred_w, CV_32F, (float*)pred_data);
         preds = preds.t();
-        cv::Mat proto(32, 160*160, CV_32F, (float*)proto_data);
+        cv::Mat proto(proto_c, proto_h*proto_w, CV_32F, (float*)proto_data);
     
         // double scale_r = std::min((double)input_h/img_mat.rows, (double)input_w/img_mat.cols);
-        return postProcess(0.5f, preds, proto, cv::Size(img_mat.cols, img_mat.rows), cv::Size(input_w, input_h), det_num);
+        return postProcess(score_threshold, preds, proto, cv::Size(img_mat.cols, img_mat.rows), cv::Size(input_w, input_h), det_num);
 
         // postProcess(score_threshold, dout, scale_r, result);
         // det_num = result.size();

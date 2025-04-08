@@ -32,9 +32,6 @@ void initModel(const char* onnx_pth, char* msg){
     try{      
         // auto model = core.read_model(R"(E:\le_trt\models\yolo11s01_int8_openvino_model\yolo11s01.xml)", 
         //                             R"(E:\le_trt\models\yolo11s01_int8_openvino_model\yolo11s01.bin)");
-        // compiled_model_ptr = new ov::CompiledModel(core.compile_model(model, "CPU", 
-        //                                                             ov::hint::performance_mode(ov::hint::PerformanceMode::THROUGHPUT), 
-        //                                                             ov::hint::num_requests(4), ov::auto_batch_timeout(1000)));                       
 
         gModelPtr = new ov::CompiledModel(core.compile_model(onnx_pth, "CPU", 
                                                                     ov::hint::performance_mode(ov::hint::PerformanceMode::THROUGHPUT), 
@@ -59,12 +56,13 @@ void warmUp(){
 
     try{
         // msg_ss_ << "WarmUp Model Pointer: " << model_ptr << "\n";        
-        cv::Mat blob_img = cv::Mat::ones(cv::Size(1024, 1024), CV_32FC3);
+        cv::Mat blob_img = cv::Mat::ones(cv::Size(1024, 1024), CV_8UC3);
         int det_num;
         doInferenceByImgMat(blob_img, 0.5f, det_num, msg);
         // msg_ss_ << msg;
         // msg_ss_ << "WarmUp Complete.";
-    }catch(std::exception ex){
+    }catch(const std::exception& ex){
+        std::cout << ex.what() << std::endl;
         // msg_ss_ << "Catch Error in Warmup Func\n";
         // msg_ss_ << "Error Message: " << ex.what() << endl;
     }
@@ -81,33 +79,28 @@ SEG_RES* doInferenceByImgMat(const cv::Mat& img_mat, const float score_threshold
     std::stringstream msg_ss;
     msg_ss << "Call <doInferenceByImgMat> Func\n";
 
-    ov::CompiledModel* model_ptr = static_cast<ov::CompiledModel*>(gModelPtr);
     if(gModelPtr==nullptr){
         msg_ss << "Error, Got nullptr, Model pointer convert failed\n";
         return nullptr;
     }else{
         msg_ss << "Convert Model Pointer Success.\n";
-        msg_ss << "Got Inference Model Pointer: " << model_ptr << "\n";                
     }
-    ov::Shape input_tensor_shape = model_ptr->input().get_shape();
-    msg_ss << "Model Input Shape: " << input_tensor_shape << "\n";
+    ov::CompiledModel* model_ptr = static_cast<ov::CompiledModel*>(gModelPtr);
 
     // // TODO: 增强
     // img_mat.convertTo(img_mat, -1, 1.2, 3);
     cv::Mat blob_img;
-    double scale_ratio;
-    int left_padding_cols, top_padding_rows;
     preProcess(*model_ptr, img_mat, blob_img);
 
     auto input_port = model_ptr->input();
     auto input_shape = model_ptr->input().get_shape();
     ov::Tensor inputensor = ov::Tensor(input_port.get_element_type(), input_shape, blob_img.data);
-    auto img_preprocess_done = std::chrono::high_resolution_clock::now();
+    // auto img_preprocess_done = std::chrono::high_resolution_clock::now();
     
     ov::InferRequest infer_request = model_ptr->create_infer_request();    
     infer_request.set_input_tensor(inputensor);
     infer_request.infer();  // 同步推理    
-    auto infer_done = std::chrono::high_resolution_clock::now();
+    // auto infer_done = std::chrono::high_resolution_clock::now();
 
     // 已知模型有两个输出节点
     auto outputs = model_ptr->outputs();
@@ -120,7 +113,7 @@ SEG_RES* doInferenceByImgMat(const cv::Mat& img_mat, const float score_threshold
     pred = pred.t();
     cv::Mat proto = cv::Mat(proto_shape[1], proto_shape[2]*proto_shape[3], CV_32F, proto_tensor.data<float>());
 
-    return postProcess(0.5f, pred, proto, cv::Size(img_mat.cols, img_mat.rows), cv::Size(input_shape[2], input_shape[3]), det_num);
+    return postProcess(score_threshold, pred, proto, cv::Size(img_mat.cols, img_mat.rows), cv::Size(input_shape[2], input_shape[3]), det_num);
 }
 
 
@@ -134,21 +127,19 @@ SEG_RES* doInferenceByImgPth(const char* img_pth, const int* roi, const float sc
         img_part = org_img(cv::Rect(cv::Point(roi[0], roi[1]), cv::Point(roi[2], roi[3])));
     else
         org_img.copyTo(img_part); 
-    // auto stop = std::chrono::high_resolution_clock::now();
-    // std::chrono::duration<double, std::milli> spend = stop -start;
-    // std::cout << "====== Read Image cost: " << spend.count() << "ms" << std::endl;
 
     // auto infer_start = std::chrono::high_resolution_clock::now();
-    return doInferenceByImgMat(img_part, score_threshold, det_num, msg);
+    auto result = doInferenceByImgMat(img_part, score_threshold, det_num, msg);
     // auto infer_stop = std::chrono::high_resolution_clock::now();
     // std::chrono::duration<double, std::milli> infer_spend = infer_stop - infer_start;
-    // std::cout << "====== Inference cost: " << infer_spend.count() << "ms" << std::endl;
+    // std::chrono::duration<double, std::milli> imgr_spend = infer_start - start;
+    // std::cout << "read image cost: " << imgr_spend.count() << "ms Inference cost: " << infer_spend.count() << "ms" << std::endl;
+    return result;
 }
 
 void preProcess(ov::CompiledModel& compiled_model, const cv::Mat& org_img, cv::Mat& blob){
     double org_h = org_img.rows, org_w = org_img.cols;
     // 前提假设，模型只有一个输入节点
-    // auto input_tensor_shape = infer_session->GetInputTypeInfo(0).GetTensorTypeAndShapeInfo().GetShape();
     auto input_tensor_shape = compiled_model.input().get_shape();
     int board_h = input_tensor_shape[2], board_w = input_tensor_shape[3];
     auto boarded_img = cv::Mat(cv::Size(board_w, board_h), CV_8UC3, cv::Scalar(114, 114, 114));
@@ -169,7 +160,7 @@ SEG_RES* postProcess(const float conf_threshold, const cv::Mat& pred_mat, const 
     vector<int> indices;
     vector<int> class_idx;
     vector<cv::Mat> masks;
-    float tl_x{}, tl_y{}, br_x{}, br_y{}, cx{}, cy{}, w{}, h{}, iou_threshold{0.3f};
+    float tl_x{}, tl_y{}, br_x{}, br_y{}, cx{}, cy{}, w{}, h{}, iou_threshold{0.7f};
 
     for(int row=0; row<pred_mat.rows; ++row){
         const float* ptr = pred_mat.ptr<float>(row);
@@ -207,14 +198,9 @@ SEG_RES* postProcess(const float conf_threshold, const cv::Mat& pred_mat, const 
 
         cv::Mat m = masks[*it];
         cv::Mat mask = m * proto_mat;
-        // std::cout << "mask shape: " << mask.rows << " " << mask.cols << std::endl;
         mask = mask.reshape(1, 160);
-        // std::cout << "after reshape mask shape: " << mask.rows << " " << mask.cols << std::endl;
 
-        // double s = std::min((double)input_h/frame.rows, (double)input_w/frame.cols);
         int n_h = r*org_size.height, n_w = r*org_size.width;
-        // std::cout << "cls: " << cls << std::endl;
-        // std::cout << tmp.tl() << " ||| " << tmp.br() << std::endl;
         cv::resize(mask, mask, infer_size);
         mask = mask(cv::Rect(cv::Point(0,0), cv::Point(n_w, n_h)));
         cv::resize(mask, mask, org_size);
