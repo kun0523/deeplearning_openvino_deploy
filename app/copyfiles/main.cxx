@@ -42,24 +42,28 @@ int main()
 
 	std::cout << "So, I'm Going To Copy Files From " << src_dir << " To " << dst_dir << std::endl;
 
-	std::regex pos_pattern(R"([DU]\d(_\d)?)");
-	std::regex pattern(R"((\d{4})\.(\d{1,2})\.(\d{1,2}))");
+	std::regex pos_pattern(R"([DU]\d(_\d)?)");  // 位置
+	std::regex pattern(R"((\d{4})\.(\d{1,2})\.(\d{1,2}))");  // 日期
+	// std::regex pattern(R"((\d{4})\.(\d{1,2})\.(\d{1,2}))");  // 日期
 	//std::regex pattern(R"([abcde](rn))");
 	std::filesystem::path src_path{ src_dir };
 	for (auto& p : std::filesystem::recursive_directory_iterator(src_path))
 	{
 		if (p.path().has_extension() && p.path().string().find("NG") != std::string::npos && p.path().extension() == file_type) {
 
+			std::cout << p.path().string() << std::endl;
+			
 			std::smatch match;
 			std::string tmp{ p.path().string()};
 			if (std::regex_search(tmp, match, pattern)) {
+				std::cout << "-------------------" << std::endl;
 
 				// if (match[1].str() == "1")
 				// 	copy_files(p.path().string(), dst_dir + "/1");
 				// else if (match[1].str() == "2")
 				// 	copy_files(p.path().string(), dst_dir + "/2");
 				
-				if(std::stoi(match[1].str())==2025 && std::stoi(match[2].str())==3 && match[3].str()==date){
+				if(std::stoi(match[1].str())==2025 && std::stoi(match[2].str())==4 && match[3].str()==date){
 
 					std::smatch pm;
 					std::string pos{"xxx"};

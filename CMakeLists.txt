@@ -99,7 +99,7 @@ endif()
 ####################################### 临时测试 ####################################################
 
 # 遍历文件夹复制文件到指定路径
-option(COPY_FILES "Compile Copy Files Proj" OFF)
+option(COPY_FILES "Compile Copy Files Proj" ON)
 if(COPY_FILES)
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/test_proj)
     add_executable(CopyFiles app/copyfiles/main.cxx)
