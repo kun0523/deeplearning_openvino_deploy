@@ -57,8 +57,8 @@ void testInferenceSpeed(){
     std::vector<double> costs{};
     double total_costs{};
     char msg[1024];
-
     initModel(onnx_file.c_str(), msg);
+
     for(const auto& file:image_files){
         int det_num{};
         auto start = std::chrono::high_resolution_clock::now();

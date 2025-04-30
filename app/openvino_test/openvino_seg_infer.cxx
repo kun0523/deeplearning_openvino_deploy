@@ -69,6 +69,12 @@ void testInferenceSpeed(){
         std::cout << "Result: " << r->get_info() << std::endl;
         std::cout << "cost: " << spend.count() << "ms" << std::endl;
         // destroyModel(ptr);
+
+        // for(int i{}; i<det_num; i++){
+        //     cv::Mat m = cv::Mat(cv::Size(r[i].mask_w, r[i].mask_h), r[i].mask_type, r[i].mask_data);
+        //     cv::imshow("t", m);
+        //     cv::waitKey(0);
+        // }
     }
     std::cout << "Average speed: " << total_costs/image_files.size() << "ms" << std::endl;    
 }

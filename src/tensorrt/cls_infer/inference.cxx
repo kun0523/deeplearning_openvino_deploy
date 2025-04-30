@@ -12,8 +12,6 @@ class Logger: public ILogger{
     }
 }gLogger;
 
-
-
 void run(){
 
     std::string enginepath = R"(E:\le_trt\models\resnet18.engine)";
@@ -132,125 +130,208 @@ void* gRunTime = nullptr;
 void* gEngine = nullptr;
 void* gContext = nullptr;
 
-void initModel(const char* model_pth, char* msg){    
-#ifdef DEBUG
-    std::fstream fs{"./debug_log.txt", std::ios_base::app};
-    fs << ov::get_openvino_version() << "\n";
-    std::cout << ov::get_openvino_version() << std::endl;
-#endif
+int initModel(const char* model_pth, char* msg){    
     std::stringstream msg_ss;
-    msg_ss << "Call <initModel> Func\n";
-    
-    // 加载模型文件
-    std::ifstream file(model_pth, std::ios::binary);
-    char* trtModelStream = nullptr;
-    int size = 0;
-    if (file.good()) {
-        file.seekg(0, file.end);
-        size = file.tellg();
-        file.seekg(0, file.beg);
-        trtModelStream = new char[size];
-        file.read(trtModelStream, size);
-        file.close();
-    }
-    
-    gRunTime = createInferRuntime(gLogger);
-    gEngine = static_cast<IRuntime*>(gRunTime)->deserializeCudaEngine(trtModelStream, size);
-    gContext = static_cast<ICudaEngine*>(gEngine)->createExecutionContext();
-    delete[] trtModelStream;
-    warmUp(msg);
-    std::cout << "init success" << std::endl;
+#ifdef DEBUG_TRT
+    std::fstream fs{"./debug_log.txt", std::ios_base::app};
+#endif
+    std::cout << "[" << getTimeNow() << "] Use TensorRT to Classify image\n";
 
-    // strcpy_s(msg, msg_ss.str().length()+2, msg_ss.str().c_str());
-    #ifdef DEBUG
+    msg_ss << "[" << getTimeNow() << "] Call <initModel> Func Model Path: " << model_pth << "\n";
+
+    try{
+        const char* sufix = std::strrchr(model_pth, '.');
+        if(std::strcmp(sufix, ".engine")!=0){
+            throw std::runtime_error("Only Support .engine Model File.");
+        }
+
+        // 加载模型文件
+        std::ifstream file(model_pth, std::ios::binary);
+        char* trtModelStream = nullptr;
+        int size = 0;
+        if (file.good()) {
+            file.seekg(0, file.end);
+            size = file.tellg();
+            file.seekg(0, file.beg);
+            trtModelStream = new char[size];
+            file.read(trtModelStream, size);
+            file.close();
+        }
+
+        if (size == 0){
+            // 反序列化模型失败
+            throw std::runtime_error("Read Model Failed!");
+        }
+        
+        gRunTime = createInferRuntime(gLogger);
+        // TODO: 如果读取模型识别后，捕获不到异常
+        gEngine = static_cast<IRuntime*>(gRunTime)->deserializeCudaEngine(trtModelStream, size);
+
+        gContext = static_cast<ICudaEngine*>(gEngine)->createExecutionContext();
+        delete[] trtModelStream;
+        msg_ss << "[" << getTimeNow() << "] Init Model Success" << std::endl;
+    }catch(const std::exception& e){
+        msg_ss << "[" << getTimeNow() << "] Error Message: " << e.what() << "\n";
+        strcpy_s(msg, msg_ss.str().length()+1, msg_ss.str().c_str());
+    #ifdef DEBUG_TRT
+        fs << msg_ss.str();
         fs.close();
     #endif
-    return;
+        return 1;
+    }
+
+    warmUp(msg);
+    strcpy_s(msg, msg_ss.str().length()+1, msg_ss.str().c_str());
+    #ifdef DEBUG_TRT
+        fs << msg_ss.str() << "\n";
+        fs.close();
+    #endif
+    return 0;
 }
 
+CLS_RES doInferenceByImgPth(const char* image_pth, const int* roi, char* msg){
+    std::stringstream msg_ss;
+
+#ifdef DEBUG_TRT
+    std::fstream fs{"./debug_log.txt", std::ios_base::app};
+#endif
+    msg_ss << "[" << getTimeNow() << "] Call <doInferenceByImgPth> Func Image Path: " << image_pth << "\n";
+    if(roi)
+        msg_ss << "[" << getTimeNow() << "] ROI: [" << roi[0] << ", " << roi[1] << ", " << roi[2] << ", " << roi[3] << "]\n";
+    
+    try{
+        cv::Mat img = cv::imread(image_pth, cv::IMREAD_COLOR);
+        cv::Mat img_part;
+        if(roi)
+            img_part = img(cv::Rect(cv::Point(roi[0], roi[1]), cv::Point(roi[2], roi[3])));
+        else
+            img.copyTo(img_part); 
+
+        #ifdef DEBUG_TRT
+            fs << msg_ss.str();
+            fs.close();
+        #endif
+        return doInferenceByImgMat(img_part, msg);
+
+    }catch(const std::exception& e){
+        msg_ss << "[" << getTimeNow() << "] " << e.what() << "\n";
+        strcpy_s(msg, msg_ss.str().length()+1, msg_ss.str().c_str());
+        #ifdef DEBUG_TRT
+            fs << msg_ss.str();
+            fs.close();
+        #endif
+        return CLS_RES(-1, -1);
+    }
+}
+    
+CLS_RES doInferenceBy3chImg(uchar* image_arr, const std::int32_t height, const std::int32_t width, char* msg){
+    std::stringstream msg_ss;
+
+#ifdef DEBUG_TRT
+    std::fstream fs{"./debug_log.txt", std::ios_base::app};
+#endif
+    msg_ss << "[" << getTimeNow() << "] Call <doInferenceBy3chImg> Func Image Size: " << height << "x" << width << "\n";
+    
+    cv::Mat img(cv::Size(width, height), CV_8UC3, image_arr);
+
+#ifdef DEBUG_TRT
+    fs << msg_ss.str();
+    fs.close();
+#endif
+    return doInferenceByImgMat(img, msg);
+}
 
 CLS_RES doInferenceByImgMat(const cv::Mat& img_mat, char* msg){
-    #ifdef DEBUG
-        std::fstream fs{"./debug_log.txt", std::ios_base::app};
-        fs << "Call <doInferenceByImgMat> Func\n";
-    #endif
-        std::stringstream msg_ss;
-        msg_ss << "Call <doInferenceByImgMat> Func\n";
-        
+    std::stringstream msg_ss;
+
+#ifdef DEBUG_TRT
+    std::fstream fs{"./debug_log.txt", std::ios_base::app};
+#endif
+    msg_ss << "[" << getTimeNow() << "] Call <doInferenceByImgMat> Func\n";
+    
     CLS_RES ret(-1, -1);
-    void* buffers[2] = { NULL, NULL };  // 一个输入CUDA  一个输出CUDA
-    std::vector<float> prob;
-    cudaStream_t stream;
+    try{
+        if((gEngine == nullptr) | (gContext == nullptr)){
+            throw std::runtime_error("No Valid Model");
+        }
 
-    int input_index = static_cast<ICudaEngine*>(gEngine)->getBindingIndex("images");  // 0
-    int output_index = static_cast<ICudaEngine*>(gEngine)->getBindingIndex("output0");  // 1
-    msg_ss << "input_index: " << input_index << " output_index: " << output_index << "\n";
+        void* buffers[2] = { NULL, NULL };  // 一个输入CUDA  一个输出CUDA
+        std::vector<float> prob;
+        cudaStream_t stream;
 
-    // 获取输入维度信息 NCHW
-    int input_h = static_cast<ICudaEngine*>(gEngine)->getBindingDimensions(input_index).d[2];
-    int input_w = static_cast<ICudaEngine*>(gEngine)->getBindingDimensions(input_index).d[3];
-    msg_ss << "inputH: " << input_h << " inputW:" << input_w << "\n";
+        int input_index = static_cast<ICudaEngine*>(gEngine)->getBindingIndex("images");  // 0
+        int output_index = static_cast<ICudaEngine*>(gEngine)->getBindingIndex("output0");  // 1
+        msg_ss << "input_index: " << input_index << " output_index: " << output_index << "\n";
 
-    // 获取输出维度信息 
-    int output_h = static_cast<ICudaEngine*>(gEngine)->getBindingDimensions(output_index).d[0];
-    int output_w = static_cast<ICudaEngine*>(gEngine)->getBindingDimensions(output_index).d[1];
-    msg_ss << "output data format: " << output_h << "x" << output_w << "\n";
+        // 获取输入维度信息 NCHW
+        int input_h = static_cast<ICudaEngine*>(gEngine)->getBindingDimensions(input_index).d[2];
+        int input_w = static_cast<ICudaEngine*>(gEngine)->getBindingDimensions(input_index).d[3];
+        msg_ss << "inputH: " << input_h << " inputW:" << input_w << "\n";
 
-    // 创建GPU显存输入 输出缓冲区
-    msg_ss << "input/output : " << static_cast<ICudaEngine*>(gEngine)->getNbBindings() << "\n"; // get the number of binding indices
-    cudaMalloc(&buffers[input_index], input_h * input_w * 3 * sizeof(float));
-    cudaMalloc(&buffers[output_index], output_h * output_w * sizeof(float));
+        // 获取输出维度信息 
+        int output_h = static_cast<ICudaEngine*>(gEngine)->getBindingDimensions(output_index).d[0];
+        int output_w = static_cast<ICudaEngine*>(gEngine)->getBindingDimensions(output_index).d[1];
+        msg_ss << "output data format: " << output_h << "x" << output_w << "\n";
 
-    // 创建零食缓存输出
-    prob.resize(output_h * output_w);
+        // 创建GPU显存输入 输出缓冲区
+        msg_ss << "input/output : " << static_cast<ICudaEngine*>(gEngine)->getNbBindings() << "\n"; // get the number of binding indices
+        cudaMalloc(&buffers[input_index], input_h * input_w * 3 * sizeof(float));
+        cudaMalloc(&buffers[output_index], output_h * output_w * sizeof(float));
 
-    // 创建cuda流
-    cudaStreamCreate(&stream);
+        // 创建零食缓存输出
+        prob.resize(output_h * output_w);
 
-    // 第一次推理12ms，后续的推理3ms左右
-    // cv::Mat rgb, blob;
-    // cv::cvtColor(img_mat, rgb, cv::COLOR_BGR2RGB);
-    // cv::resize(rgb, blob, cv::Size(224, 224));
-    // blob.convertTo(blob, CV_32F);
-    // blob = blob / 255.0;
-    // // HWC -> CHW
-    // cv::Mat tensor = cv::dnn::blobFromImage(blob);
-    cv::Mat tensor = cv::dnn::blobFromImage(img_mat, 1.0/255.0, cv::Size(input_w, input_h), 0.0, true, false);
+        // 创建cuda流
+        cudaStreamCreate(&stream);
 
-    // 内存到GPU显存
-    cudaMemcpyAsync(buffers[0], tensor.ptr<float>(), input_h * input_w * 3 * sizeof(float), cudaMemcpyHostToDevice, stream);
+        // 第一次推理12ms，后续的推理3ms左右
+        cv::Mat tensor = cv::dnn::blobFromImage(img_mat, 1.0/255.0, cv::Size(input_w, input_h), 0.0, true, false);
 
-    // 推理
-    static_cast<IExecutionContext*>(gContext)->enqueueV2(buffers, stream, nullptr);
+        // 内存到GPU显存
+        cudaMemcpyAsync(buffers[0], tensor.ptr<float>(), input_h * input_w * 3 * sizeof(float), cudaMemcpyHostToDevice, stream);
 
-    // GPU显存到内存
-    cudaMemcpyAsync(prob.data(), buffers[1], output_h * output_w * sizeof(float), cudaMemcpyDeviceToHost, stream);
+        // 推理
+        static_cast<IExecutionContext*>(gContext)->enqueueV2(buffers, stream, nullptr);
 
-    // 后处理
-    cv::Mat probmat(output_h, output_w, CV_32F, (float*)prob.data());
-    cv::Point maxL, minL;
-    double maxv, minv;
-    cv::minMaxLoc(probmat, &minv, &maxv, &minL, &maxL);
-    int max_index = maxL.x;
-    ret.cls = max_index;
-    ret.confidence = maxv;
+        // GPU显存到内存
+        cudaMemcpyAsync(prob.data(), buffers[1], output_h * output_w * sizeof(float), cudaMemcpyDeviceToHost, stream);
 
-    // 同步结束 释放资源
-    cudaStreamSynchronize(stream);
-    cudaStreamDestroy(stream);
-    if (!buffers[0]) {
-        delete[] buffers;
+        // 后处理
+        cv::Mat probmat(output_h, output_w, CV_32F, (float*)prob.data());
+        cv::Point maxL, minL;
+        double maxv, minv;
+        cv::minMaxLoc(probmat, &minv, &maxv, &minL, &maxL);
+        int max_index = maxL.x;
+        ret.cls = max_index;
+        ret.confidence = maxv;
+
+        // 同步结束 释放资源
+        cudaStreamSynchronize(stream);
+        cudaStreamDestroy(stream);
+        if (!buffers[0]) {
+            delete[] buffers;
+        }
+
+        #ifdef DEBUG_TRT
+            fs << msg_ss.str() << "\n";
+            fs << "[" << getTimeNow() << "] ------------Inference Success.-------------------\n";
+            fs.close();
+        #endif    
+        return ret;
+    }catch(const std::exception& e){
+        msg_ss << "[" << getTimeNow() << "] ERROR: " << e.what();
+        strcpy_s(msg, msg_ss.str().length()+1, msg_ss.str().c_str());
+        #ifdef DEBUG_TRT
+            fs << msg_ss.str();
+            fs << "[" << getTimeNow() << "] ------------Inference Failed.-------------------\n";
+            fs.close();
+        #endif
+        return ret;
     }
-
-    #ifdef DEBUG
-        fs << "[" << t << "]" << "---- Inference Over ----\n";
-        fs.close();
-    #endif    
-    return ret;
 }
 
 
-void destroyModel(){
+int destroyModel(){
     // TODO  感觉没有用。。。
     if (!gContext) {
         static_cast<IExecutionContext*>(gContext)->destroy();
@@ -266,6 +347,7 @@ void destroyModel(){
     }
 
     std::cout << "Model Destroyed." << std::endl;
+    return 0;
 }
 
 
@@ -286,37 +368,6 @@ void warmUp(char* msg){
     strcpy_s(msg, msg_ss.str().length()+2, msg_ss.str().c_str());
 }
 
-CLS_RES doInferenceByImgPth(const char* image_pth, const int* roi, char* msg){
-#ifdef DEBUG
-    std::fstream fs{"./debug_log.txt", std::ios_base::app};
-    fs << "Got Image path: " << image_pth << "\n";
-#endif
-    cv::Mat img = cv::imread(image_pth, cv::IMREAD_COLOR);
-    cv::Mat img_part;
-    if(roi)
-        img_part = img(cv::Rect(cv::Point(roi[0], roi[1]), cv::Point(roi[2], roi[3])));
-    else
-        img.copyTo(img_part); 
-#ifdef DEBUG
-    fs << "ROI Image size: " << img_part.size << "\n";
-    fs.close();
-#endif
-    return doInferenceByImgMat(img_part, msg);
-}
-
-CLS_RES doInferenceBy3chImg(uchar* image_arr, const std::int32_t height, const std::int32_t width, char* msg){
-#ifdef DEBUG
-    std::fstream fs{"./debug_log.txt", std::ios_base::app};
-    fs << "Got Image size: " << width << "x" << height << "\n";
-#endif
-    cv::Mat img(cv::Size(width, height), CV_8UC3, image_arr);
-
-#ifdef DEBUG
-    fs << "Convert Image size: " << img.size << "\n";
-    fs.close();
-#endif
-    return doInferenceByImgMat(img, msg);
-}
 
 std::string getTimeNow() {
     std::stringstream ss;

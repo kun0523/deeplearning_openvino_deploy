@@ -41,6 +41,7 @@ void testInferenceSpeed(){
 
 int main(){
     std::cout << "OnnxRuntime Classification Demo" << std::endl;
+
     testInferenceSpeed();
     return 0;
 

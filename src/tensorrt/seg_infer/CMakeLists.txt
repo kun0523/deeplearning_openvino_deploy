@@ -18,6 +18,7 @@ endif()
 message(STATUS "Now Project is trt_seg")
 add_library(trt_seg SHARED inference.cxx)
 
+target_compile_definitions(trt_seg PRIVATE "DEBUG_TRT") 
 target_include_directories(trt_seg PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} 
                                           ${TRT_DIR}/include 
                                           )

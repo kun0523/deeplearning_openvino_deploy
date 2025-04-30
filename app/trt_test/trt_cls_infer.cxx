@@ -2,7 +2,8 @@
 
 void testInferenceSpeed(){
     // std::string model_file{R"(E:\Pretrained_models\YOLOv11-cls\yolo11n-cls-fp32.engine)"};
-    std::string model_file{R"(E:\Pretrained_models\YOLOv11-cls\yolo11n-cls-fp16.engine)"};
+    // std::string model_file{R"(E:\Pretrained_models\YOLOv11-cls\yolo11n-cls-fp16.engine)"};
+    std::string model_file{R"(D:\share_dir\iqc_crack\ultr_workdir\crack_cls0308\yolo11s_sgd_lr00052\weights\best.onnx)"};
     std::vector<std::string> image_files{
         // R"(D:\envs\ult_py311_cpu\Lib\site-packages\osam\_data\dogs.jpg)",  // 1560*1600  168ms
         // R"(E:\DataSets\imageNet\n02086240_Shih-Tzu.JPEG)",  // 1280*1024  78ms

@@ -24,117 +24,158 @@ SEG_RES::~SEG_RES(){
     }
 }
 
-void initModel(const char* onnx_pth, char* msg){
+int initModel(const char* onnx_pth, char* msg){
     std::stringstream msg_ss;
-    msg_ss << "Call <initModel> Func\n";
-    ov::Core core;  
+#ifdef DEBUG_OPV
+    std::fstream fs{"./debug_log.txt", std::ios_base::app};
+#endif
+    std::cout << "[" << getTimeNow() << "] Use OpenVINO to Segment objects\n";
 
-    try{      
-        // auto model = core.read_model(R"(E:\le_trt\models\yolo11s01_int8_openvino_model\yolo11s01.xml)", 
-        //                             R"(E:\le_trt\models\yolo11s01_int8_openvino_model\yolo11s01.bin)");
+    msg_ss << "[" << getTimeNow() << "] Call <initModel> Func Model Path: " << onnx_pth << "\n";
 
+    try{
+        ov::Core core;  
         gModelPtr = new ov::CompiledModel(core.compile_model(onnx_pth, "CPU", 
                                                                     ov::hint::performance_mode(ov::hint::PerformanceMode::THROUGHPUT), 
                                                                     ov::hint::num_requests(4), ov::auto_batch_timeout(1000)));                       
-        msg_ss << "Create Compiled model Success. Got Model Pointer: " << gModelPtr << "\n";
-    }catch(std::exception ex){
-        msg_ss << "Create Model Failed\n";
-        msg_ss << "Error Message: " << ex.what() << "\n";
-
+        msg_ss << "[" << getTimeNow() << "] Create Compiled model Success. Got Model Pointer: " << gModelPtr << "\n";
+    }catch(const std::exception& ex){
+        msg_ss << "[" << getTimeNow() << "] Error Message: " << ex.what() << "\n";
         strcpy_s(msg, msg_ss.str().length()+1, msg_ss.str().c_str());
-        return;
+    #ifdef DEBUG_OPV
+        fs << msg_ss.str();
+        fs.close();
+    #endif
+        return 1;
     }
 
-    warmUp(); 
+    warmUp(msg); 
     strcpy_s(msg, msg_ss.str().length()+1, msg_ss.str().c_str());
-    return;
+#ifdef DEBUG_OPV
+    fs << msg_ss.str();
+    fs << "Model Init Success.\n";
+    fs.close();
+#endif
+    return 0;
 }
 
-void warmUp(){
-    // msg_ss_ << "Call <warmUp> Func ...\n";
-    char msg[1024]{};
+void warmUp(char* msg){
+    cv::Mat blob_img = cv::Mat::ones(cv::Size(1024, 1024), CV_8UC3);
+    int det_num;
+    doInferenceByImgMat(blob_img, 0.5f, det_num, msg);
+}
 
+SEG_RES* doInferenceByImgPth(const char* img_pth, const int* roi, const float score_threshold, int& det_num, char* msg){
+    std::stringstream msg_ss;
+
+#ifdef DEBUG_OPV
+    std::fstream fs{"./debug_log.txt", std::ios_base::app};
+#endif
+    msg_ss << "[" << getTimeNow() << "] Call <doInferenceByImgPth> Func Image Path: " << img_pth << "\n";
+    if(roi)
+        msg_ss << "[" << getTimeNow() << "] ROI: [" << roi[0] << ", " << roi[1] << ", " << roi[2] << ", " << roi[3] << "]\n";
+    
     try{
-        // msg_ss_ << "WarmUp Model Pointer: " << model_ptr << "\n";        
-        cv::Mat blob_img = cv::Mat::ones(cv::Size(1024, 1024), CV_8UC3);
-        int det_num;
-        doInferenceByImgMat(blob_img, 0.5f, det_num, msg);
-        // msg_ss_ << msg;
-        // msg_ss_ << "WarmUp Complete.";
-    }catch(const std::exception& ex){
-        std::cout << ex.what() << std::endl;
-        // msg_ss_ << "Catch Error in Warmup Func\n";
-        // msg_ss_ << "Error Message: " << ex.what() << endl;
+        // 对三通道的图进行推理
+        cv::Mat org_img = cv::imread(img_pth, cv::IMREAD_COLOR);
+        cv::Mat img_part;
+        if(roi)
+            img_part = org_img(cv::Rect(cv::Point(roi[0], roi[1]), cv::Point(roi[2], roi[3])));
+        else
+            org_img.copyTo(img_part); 
+            
+        #ifdef DEBUG_OPV
+            fs << msg_ss.str();
+            fs.close();
+        #endif
+        return doInferenceByImgMat(img_part, score_threshold, det_num, msg);
+
+    }catch(const std::exception& e){
+        msg_ss << "[" << getTimeNow() << "] " << e.what() << "\n";
+        strcpy_s(msg, msg_ss.str().length()+1, msg_ss.str().c_str());
+        #ifdef DEBUG_OPV
+            fs << msg_ss.str();
+            fs.close();
+        #endif
+        return new SEG_RES[1];
     }
 }
 
 SEG_RES* doInferenceBy3chImg(uchar* image_arr, const int height, const int width, const float score_threshold, int& det_num, char* msg){
+    std::stringstream msg_ss;
+
+#ifdef DEBUG_OPV
+    std::fstream fs{"./debug_log.txt", std::ios_base::app};
+#endif
+    msg_ss << "[" << getTimeNow() << "] Call <doInferenceBy3chImg> Func Image Size: " << height << "x" << width << "\n";
+    
     // 对三通道的图进行推理
     cv::Mat img(cv::Size(width, height), CV_8UC3, image_arr);
+#ifdef DEBUG_OPV
+    fs << msg_ss.str();
+    fs.close();
+#endif
     return doInferenceByImgMat(img, score_threshold, det_num, msg);
 }
 
 SEG_RES* doInferenceByImgMat(const cv::Mat& img_mat, const float score_threshold, int& det_num, char* msg){
-
     std::stringstream msg_ss;
-    msg_ss << "Call <doInferenceByImgMat> Func\n";
 
-    if(gModelPtr==nullptr){
-        msg_ss << "Error, Got nullptr, Model pointer convert failed\n";
-        return nullptr;
-    }else{
-        msg_ss << "Convert Model Pointer Success.\n";
-    }
-    ov::CompiledModel* model_ptr = static_cast<ov::CompiledModel*>(gModelPtr);
+#ifdef DEBUG_OPV
+    std::fstream fs{"./debug_log.txt", std::ios_base::app};
+#endif
+    msg_ss << "[" << getTimeNow() << "] Call <doInferenceByImgMat> Func\n";
 
-    // // TODO: 增强
-    // img_mat.convertTo(img_mat, -1, 1.2, 3);
-    cv::Mat blob_img;
-    preProcess(*model_ptr, img_mat, blob_img);
-
-    auto input_port = model_ptr->input();
-    auto input_shape = model_ptr->input().get_shape();
-    ov::Tensor inputensor = ov::Tensor(input_port.get_element_type(), input_shape, blob_img.data);
-    // auto img_preprocess_done = std::chrono::high_resolution_clock::now();
+    try{
+        if(gModelPtr == nullptr)
+            throw std::runtime_error("Error Model Pointer Convert Failed!");
     
-    ov::InferRequest infer_request = model_ptr->create_infer_request();    
-    infer_request.set_input_tensor(inputensor);
-    infer_request.infer();  // 同步推理    
-    // auto infer_done = std::chrono::high_resolution_clock::now();
+        ov::CompiledModel* model_ptr = static_cast<ov::CompiledModel*>(gModelPtr);
 
-    // 已知模型有两个输出节点
-    auto outputs = model_ptr->outputs();
-    auto pred_shape = outputs[0].get_shape();
-    auto proto_shape = outputs[1].get_shape();
+        cv::Mat blob_img;
+        preProcess(*model_ptr, img_mat, blob_img);
 
-    auto pred_tensor = infer_request.get_output_tensor(0);
-    auto proto_tensor = infer_request.get_output_tensor(1);
-    cv::Mat pred = cv::Mat(pred_shape[1], pred_shape[2], CV_32F, pred_tensor.data<float>());
-    pred = pred.t();
-    cv::Mat proto = cv::Mat(proto_shape[1], proto_shape[2]*proto_shape[3], CV_32F, proto_tensor.data<float>());
+        auto input_port = model_ptr->input();
+        auto input_shape = model_ptr->input().get_shape();
+        ov::Tensor inputensor = ov::Tensor(input_port.get_element_type(), input_shape, blob_img.data);
+        msg_ss << "Input Shape: " << input_shape.to_string() << "\n";
+        
+        ov::InferRequest infer_request = model_ptr->create_infer_request();    
+        infer_request.set_input_tensor(inputensor);
+        infer_request.infer();  // 同步推理    
 
-    return postProcess(score_threshold, pred, proto, cv::Size(img_mat.cols, img_mat.rows), cv::Size(input_shape[2], input_shape[3]), det_num);
-}
+        // 已知模型有两个输出节点
+        auto outputs = model_ptr->outputs();
+        auto pred_shape = outputs[0].get_shape();
+        auto proto_shape = outputs[1].get_shape();
+        msg_ss << "Output Pred Shape: " << pred_shape.to_string() << "\n";
+        msg_ss << "Output Proto Shape: " << proto_shape.to_string() << "\n";
 
+        auto pred_tensor = infer_request.get_output_tensor(0);
+        auto proto_tensor = infer_request.get_output_tensor(1);
+        cv::Mat pred = cv::Mat(pred_shape[1], pred_shape[2], CV_32F, pred_tensor.data<float>());
+        pred = pred.t();
+        cv::Mat proto = cv::Mat(proto_shape[1], proto_shape[2]*proto_shape[3], CV_32F, proto_tensor.data<float>());
 
-SEG_RES* doInferenceByImgPth(const char* img_pth, const int* roi, const float score_threshold, int& det_num, char* msg){
-    // 对三通道的图进行推理
-    // auto start = std::chrono::high_resolution_clock::now();
-    cv::Mat org_img = cv::imread(img_pth, cv::IMREAD_COLOR);
-    cv::Mat img_part;
+        strcpy_s(msg, msg_ss.str().length()+1, msg_ss.str().c_str());
+        SEG_RES* result = postProcess(score_threshold, pred, proto, cv::Size(img_mat.cols, img_mat.rows), cv::Size(input_shape[2], input_shape[3]), det_num);
+        #ifdef DEBUG_OPV
+            fs << msg_ss.str();
+            fs << "[" << getTimeNow() << "] ------------Inference Success.-------------------\n";
+            fs.close();
+        #endif
+        return result;
 
-    if(roi)
-        img_part = org_img(cv::Rect(cv::Point(roi[0], roi[1]), cv::Point(roi[2], roi[3])));
-    else
-        org_img.copyTo(img_part); 
-
-    // auto infer_start = std::chrono::high_resolution_clock::now();
-    auto result = doInferenceByImgMat(img_part, score_threshold, det_num, msg);
-    // auto infer_stop = std::chrono::high_resolution_clock::now();
-    // std::chrono::duration<double, std::milli> infer_spend = infer_stop - infer_start;
-    // std::chrono::duration<double, std::milli> imgr_spend = infer_start - start;
-    // std::cout << "read image cost: " << imgr_spend.count() << "ms Inference cost: " << infer_spend.count() << "ms" << std::endl;
-    return result;
+    }catch(const std::exception& e){
+        msg_ss << "[" << getTimeNow() << "] ERROR Message: " << e.what() << "\n";
+        strcpy_s(msg, msg_ss.str().length()+1, msg_ss.str().c_str());
+    #ifdef DEBUG_OPV
+        fs << msg_ss.str();
+        fs << "[" << getTimeNow() << "] ------------Inference Failed.-------------------\n";
+        fs.close();
+    #endif
+        return new SEG_RES[1];
+    }
 }
 
 void preProcess(ov::CompiledModel& compiled_model, const cv::Mat& org_img, cv::Mat& blob){
@@ -225,3 +266,32 @@ SEG_RES* postProcess(const float conf_threshold, const cv::Mat& pred_mat, const 
 
     return result;
 }
+
+int destroyModel(){
+#ifdef DEBUG_OPV
+    std::fstream fs{"./debug_log.txt", std::ios_base::app};
+#endif
+    if(gModelPtr!=nullptr){
+        auto compiled_model_ptr = static_cast<ov::CompiledModel*>(gModelPtr);
+        delete compiled_model_ptr;
+    }
+#ifdef DEBUG_OPV
+    fs << "[" << getTimeNow() << "] Release Model Success.\n";
+    fs.close();
+#endif
+    return 0;
+}
+
+std::string getTimeNow() {
+    std::stringstream ss;
+    // 获取当前时间点
+    auto now = std::chrono::system_clock::now();
+    
+    // 将时间点转换为time_t以便进一步转换为本地时间
+    std::time_t now_time = std::chrono::system_clock::to_time_t(now);
+    
+    // 转换为本地时间并打印
+    ss << std::put_time(std::localtime(&now_time), "%Y-%m-%d %X");
+    return ss.str(); 
+}
+    

@@ -52,7 +52,7 @@ struct SEG_RES{
 /// @param model_pth onnx模型文件路径字符串指针
 /// @param msg 消息字符数组，用于写入信息 默认字符数组长度 1024
 /// @return 
-MY_DLL void initModel(const char* model_pth, char* msg);
+MY_DLL int __stdcall initModel(const char* model_pth, char* msg);
 
 
 /// @brief 根据图片名+ROI 进行目标检测
@@ -62,7 +62,7 @@ MY_DLL void initModel(const char* model_pth, char* msg);
 /// @param det_num 返回检测到的目标数量
 /// @param msg 消息字符数组，用于写入信息 默认数组长度1024
 /// @return 返回 SEG_RES 数组指针 包含多个检测结果
-MY_DLL SEG_RES* doInferenceByImgPth(const char* img_pth, const int* roi, const float score_threshold, int& det_num, char* msg);
+MY_DLL SEG_RES* __stdcall doInferenceByImgPth(const char* img_pth, const int* roi, const float score_threshold, int& det_num, char* msg);
 
 
 /// @brief 根据 图像指针+图像尺寸 进行目标检测
@@ -73,11 +73,11 @@ MY_DLL SEG_RES* doInferenceByImgPth(const char* img_pth, const int* roi, const f
 /// @param det_num 返回检测到的目标数量
 /// @param msg 消息字符数组，用于写入信息 默认数组长度1024
 /// @return 返回 SEG_RES 数组指针 包含多个检测结果
-MY_DLL SEG_RES* doInferenceBy3chImg(uchar* image_arr, const int height, const int width, const float score_threshold, int& det_num, char* msg);
+MY_DLL SEG_RES* __stdcall doInferenceBy3chImg(uchar* image_arr, const int height, const int width, const float score_threshold, int& det_num, char* msg);
 
 /// @brief 销毁内存中的模型，回收资源
 /// @return 
-MY_DLL void destroyModel();
+MY_DLL int __stdcall destroyModel();
 
 SEG_RES* doInferenceByImgMat(const cv::Mat& img_mat, const float score_threshold, int& det_num, char* msg);
 std::string getTimeNow();
