@@ -34,15 +34,16 @@ void testInferenceSpeed(){
         costs.push_back(spend.count());
         std::cout << "Result: " << r.cls << " " << r.confidence << std::endl;
         std::cout << "cost: " << spend.count() << "ms" << std::endl;
-        // destroyModel(ptr);
     }
     std::cout << "Average speed: " << total_costs/image_files.size() << "ms" << std::endl;    
+    destroyModel();
 }
 
 int main(){
-    std::cout << "OnnxRuntime Classification Demo" << std::endl;
-
-    testInferenceSpeed();
+    printInfo();
+    
+    for(int i{}; i<100; i++)
+        testInferenceSpeed();
     return 0;
 
     // printInfo();

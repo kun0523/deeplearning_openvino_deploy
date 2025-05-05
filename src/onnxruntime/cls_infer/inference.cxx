@@ -4,6 +4,7 @@ std::unique_ptr<Ort::Session> gModelPtr;
 
 void printInfo(){
     std::cout << "OnnxRuntime Classification Inference Demo" << std::endl;
+    std::cout << "OnnxRuntime Version: " << Ort::GetVersionString() << std::endl;
 }
 
 void run(const char* image_path, const char* onnx_path) {
@@ -105,9 +106,7 @@ int initModel(const char* onnx_pth, char* msg){
     std::wstring modelPath = std::wstring(onnxpath.begin(), onnxpath.end());
     try{
         static Ort::Env ORT_ENV(ORT_LOGGING_LEVEL_WARNING, "Classification");
-        // gModelPtr = new Ort::Session(ORT_ENV, modelPath.c_str(), Ort::SessionOptions());
         gModelPtr = std::make_unique<Ort::Session>(ORT_ENV, modelPath.c_str(), Ort::SessionOptions());
-
         msg_ss << "[" << getTimeNow() << "] Init Session Success.\n";
     }catch(const std::exception& e){
         msg_ss << "[" << getTimeNow() << "] Error Message: " << e.what() << "\n";
@@ -197,8 +196,6 @@ CLS_RES doInferenceByImgMat(const cv::Mat& img_mat, char* msg){
         if(gModelPtr == nullptr)
             throw std::runtime_error("Model Pointer Convert Failed!");
 
-        // Ort::Session* gModelPtr = static_cast<Ort::Session*>(gModelPtr);
-
         std::vector<std::string> input_node_names;
         std::vector<std::string> output_node_names;
         size_t numInputNodes = gModelPtr->GetInputCount();
@@ -283,6 +280,15 @@ CLS_RES doInferenceByImgMat(const cv::Mat& img_mat, char* msg){
     #endif
         return result;
     }
+}
+
+int destroyModel(){
+#ifdef DEBUG_ORT
+    std::fstream fs{"./debug_log.txt", std::ios_base::app};
+    fs << "[" << getTimeNow() << "] Release Model Success.\n";
+#endif
+    std::cout << "Release Model Success.\n";
+    return 0;
 }
 
 std::string getTimeNow() {

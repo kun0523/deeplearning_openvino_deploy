@@ -68,6 +68,11 @@ MY_DLL DET_RES* __stdcall doInferenceByImgPth(const char* img_pth, const int* ro
 /// @return 返回 DET_RES 数组指针 包含多个检测结果
 MY_DLL DET_RES* __stdcall doInferenceBy3chImg(uchar* image_arr, const int height, const int width, const float score_threshold, int& det_num, char* msg);
 
+/// @brief 回收Result资源
+/// @param res_ptr 推理结果数组指针
+/// @param num 检测到的对象个数
+/// @return 
+MY_DLL int __stdcall freeResult(void* res_ptr, int num);
 
 /// @brief 销毁内存中的模型，回收资源
 /// @return 

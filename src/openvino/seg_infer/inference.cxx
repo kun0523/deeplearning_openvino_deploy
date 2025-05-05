@@ -17,13 +17,6 @@ std::string SEG_RES::get_info(){
     return ss.str();
 }
 
-SEG_RES::~SEG_RES(){
-    if(mask_data){
-        delete[] mask_data;
-        mask_data = nullptr;
-    }
-}
-
 int initModel(const char* onnx_pth, char* msg){
     std::stringstream msg_ss;
 #ifdef DEBUG_OPV
@@ -294,4 +287,17 @@ std::string getTimeNow() {
     ss << std::put_time(std::localtime(&now_time), "%Y-%m-%d %X");
     return ss.str(); 
 }
-    
+
+int freeResult(void* res_ptr, int num){
+    if(!res_ptr)
+        return 1;
+        
+    SEG_RES* tmp = static_cast<SEG_RES*>(res_ptr);
+    for(int i{}; i<num; i++){
+        delete[] tmp[i].mask_data;
+        tmp[i].mask_data = nullptr;
+    }
+    delete[] tmp;
+    tmp = nullptr;
+    return 0;
+}

@@ -24,19 +24,22 @@ void testInferenceSpeed(){
     char msg[1024];
     initModel(model_file.c_str(), msg);
     int idx{};
-    for(const auto& file:image_files){
-        int det_num{};
-        auto start = std::chrono::high_resolution_clock::now();
-        auto r = doInferenceByImgPth(file.c_str(), nullptr, 0.5f, det_num, msg);
-        auto end = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double, std::milli> spend = end - start;
-        total_costs += spend.count();
-        costs.push_back(spend.count());
-        std::cout << "Result: " << r->get_info() << std::endl;
-        std::cout << idx++ << " cost: " << spend.count() << "ms" << std::endl;
-        // destroyModel();
+    for(int i{}; i<100; i++){
+        for(const auto& file:image_files){
+            int det_num{};
+            auto start = std::chrono::high_resolution_clock::now();
+            auto r = doInferenceByImgPth(file.c_str(), nullptr, 0.5f, det_num, msg);
+            auto end = std::chrono::high_resolution_clock::now();
+            std::chrono::duration<double, std::milli> spend = end - start;
+            total_costs += spend.count();
+            costs.push_back(spend.count());
+            std::cout << "Result: " << r->get_info() << std::endl;
+            std::cout << idx++ << " cost: " << spend.count() << "ms" << std::endl;
+            freeResult(r, det_num);
+        }
     }
     std::cout << "Average speed: " << total_costs/image_files.size() << "ms" << std::endl;    
+    destroyModel();
 }
 
 

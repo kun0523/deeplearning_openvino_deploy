@@ -361,3 +361,21 @@ DET_RES* postProcess(const float conf_threshold, cv::Mat& det_result_mat, const 
 
     return result;
 }
+
+int destroyModel(){
+#ifdef DEBUG_ORT
+    std::fstream fs{"./debug_log.txt", std::ios_base::app};
+    fs << "[" << getTimeNow() << "] Release Model Success.\n";
+#endif
+    std::cout << "Release Model Success.\n";
+    return 0;
+}
+
+int freeResult(void* res_ptr, int num){
+    if(!res_ptr){
+        return 1;
+    }
+    
+    delete[] static_cast<DET_RES*>(res_ptr);
+    return 0;
+}

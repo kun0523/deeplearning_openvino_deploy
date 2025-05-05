@@ -32,15 +32,17 @@ void testInferenceSpeed(){
         costs.push_back(spend.count());
         std::cout << "Result: " << r->get_info() << std::endl;
         std::cout << "cost: " << spend.count() << "ms" << std::endl;
-        // destroyModel(ptr);
+        freeResult(r, det_num);
     }
     std::cout << "Average speed: " << total_costs/image_files.size() << "ms" << std::endl;    
+    destroyModel();
 }
 
 int main(){
     std::cout << "OnnxRuntime Detection Demo" << std::endl;
 
-    testInferenceSpeed();  // 有概率推理错误，待排查是什么原因！！
+    for(int i{}; i<100; i++)
+        testInferenceSpeed();  // 有概率推理错误，待排查是什么原因！！
     return 0;
 
     char msg[1024];

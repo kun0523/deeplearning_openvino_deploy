@@ -234,6 +234,7 @@ int destroyModel(){
 #endif
     if(gModelPtr!=nullptr){
         ov::CompiledModel* model_ptr = static_cast<ov::CompiledModel*>(gModelPtr);
+        // model_ptr->~CompiledModel();
         delete model_ptr;      
     }
 #ifdef DEBUG_OPV

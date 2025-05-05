@@ -2,8 +2,8 @@
 
 void testInferenceSpeed(){
     // std::string model_file{R"(E:\Pretrained_models\YOLOv11-cls\yolo11n-cls-fp32.engine)"};
-    // std::string model_file{R"(E:\Pretrained_models\YOLOv11-cls\yolo11n-cls-fp16.engine)"};
-    std::string model_file{R"(D:\share_dir\iqc_crack\ultr_workdir\crack_cls0308\yolo11s_sgd_lr00052\weights\best.onnx)"};
+    std::string model_file{R"(E:\Pretrained_models\YOLOv11-cls\yolo11n-cls-fp16.engine)"};
+    // std::string model_file{R"(D:\share_dir\iqc_crack\ultr_workdir\crack_cls0308\yolo11s_sgd_lr00052\weights\best.onnx)"};
     std::vector<std::string> image_files{
         // R"(D:\envs\ult_py311_cpu\Lib\site-packages\osam\_data\dogs.jpg)",  // 1560*1600  168ms
         // R"(E:\DataSets\imageNet\n02086240_Shih-Tzu.JPEG)",  // 1280*1024  78ms
@@ -35,16 +35,17 @@ void testInferenceSpeed(){
         costs.push_back(spend.count());
         std::cout << "Result: " << r.cls << " " << r.confidence << std::endl;
         std::cout << idx++ << " cost: " << spend.count() << "ms" << std::endl;
-        // destroyModel();
     }
     std::cout << "Average speed: " << total_costs/image_files.size() << "ms" << std::endl;    
+    destroyModel();
 }
 
 
 int main(){
     std::cout << "TensorRT Classification Demo" << std::endl;
 
-    testInferenceSpeed();
+    // for(int i{}; i<5000; i++)
+        testInferenceSpeed();
     return 0;
 
     printInfo();

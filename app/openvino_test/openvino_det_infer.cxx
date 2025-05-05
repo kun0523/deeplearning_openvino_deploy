@@ -32,7 +32,7 @@ void testInferenceSpeed(){
         costs.push_back(spend.count());
         std::cout << "Result: " << r->get_info() << std::endl;
         std::cout << "cost: " << spend.count() << "ms" << std::endl;
-        // destroyModel(ptr);
+        freeResult(r, det_num);
     }
     std::cout << "Average speed: " << total_costs/image_files.size() << "ms" << std::endl;    
 }

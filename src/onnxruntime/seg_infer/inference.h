@@ -49,8 +49,6 @@ struct SEG_RES{
                                                             cls(cls_id_), confidence(conf_){}
     int get_area();
     std::string get_info();
-
-    ~SEG_RES();
 };
 
 SEG_RES* run(const char* image_path, const char* onnx_path, int& det_num);
@@ -83,6 +81,13 @@ MY_DLL SEG_RES* __stdcall doInferenceByImgPth(const char* img_pth, const int* ro
 /// @return 返回 SEG_RES 数组指针 包含多个检测结果
 MY_DLL SEG_RES* __stdcall doInferenceBy3chImg(uchar* image_arr, const int height, const int width, const float score_threshold, int& det_num, char* msg);
 
+/// @brief 回收Result资源
+/// @param res_ptr 推理结果数组指针
+/// @param num 检测到的对象个数
+/// @return 
+MY_DLL int __stdcall freeResult(void* res_ptr, int num);
+
+MY_DLL int __stdcall destroyModel();
 
 SEG_RES* doInferenceByImgMat(const cv::Mat& img_mat, const float score_threshold, int& det_num, char* msg);
 std::string getTimeNow();

@@ -49,6 +49,8 @@ MY_DLL CLS_RES __stdcall doInferenceByImgPth(const char* image_pth, const int* r
 /// @return 返回分类标签
 MY_DLL CLS_RES __stdcall doInferenceBy3chImg(uchar* image_arr, const int height, const int width, char* msg);
 
+MY_DLL int __stdcall destroyModel();
+
 CLS_RES doInferenceByImgMat(const cv::Mat& img_mat, char* msg);
 std::string getTimeNow();
 

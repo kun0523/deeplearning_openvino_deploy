@@ -124,6 +124,7 @@ void run(){
     cudaStreamSynchronize(stream);
     cudaStreamDestroy(stream);
 
+
     if (!context) {
         context->destroy();
     }
@@ -316,7 +317,9 @@ DET_RES* doInferenceByImgMat(const cv::Mat& img_mat, const float score_threshold
         cudaStreamSynchronize(stream);
         cudaStreamDestroy(stream);
         if (!buffers[0]) {
-            delete[] buffers;
+            cudaFree(buffers[0]);
+            cudaFree(buffers[1]);
+            // delete[] buffers;
         }
 
         strcpy_s(msg, msg_ss.str().length()+1, msg_ss.str().c_str());
@@ -455,4 +458,14 @@ DET_RES* postProcess(const float conf_threshold, cv::Mat& det_result_mat, const 
     }
 
     return result;
+}
+
+
+int freeResult(void* res_ptr, int num){
+    if(!res_ptr){
+        return 1;
+    }
+    
+    delete[] static_cast<DET_RES*>(res_ptr);
+    return 0;
 }

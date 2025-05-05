@@ -17,14 +17,6 @@ std::string SEG_RES::get_info(){
     return ss.str();
 }
 
-SEG_RES::~SEG_RES(){
-    std::cout << "Call SEG_RES destroy func" << std::endl;
-    if(mask_data){
-        delete[] mask_data;
-        mask_data = nullptr;
-    }
-}
-
 void printInfo(){
     std::cout << "OnnxRuntime Detection Inference Demo" << std::endl;
 }
@@ -382,4 +374,29 @@ SEG_RES* postProcess(const float conf_threshold, const cv::Mat& pred_mat, const 
     }
 
     return result;
+}
+
+
+int freeResult(void* res_ptr, int num){
+    if(!res_ptr)
+        return 1;
+        
+    SEG_RES* tmp = static_cast<SEG_RES*>(res_ptr);
+    for(int i{}; i<num; i++){
+        delete[] tmp[i].mask_data;
+        tmp[i].mask_data = nullptr;
+    }
+    delete[] tmp;
+    tmp = nullptr;
+    return 0;
+}
+
+
+int destroyModel(){
+#ifdef DEBUG_ORT
+    std::fstream fs{"./debug_log.txt", std::ios_base::app};
+    fs << "[" << getTimeNow() << "] Release Model Success.\n";
+#endif
+    std::cout << "Release Model Success.\n";
+    return 0;
 }

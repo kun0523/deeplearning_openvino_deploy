@@ -382,3 +382,11 @@ DET_RES* postProcess(const float conf_threshold, cv::Mat& det_result_mat, const 
     return result;
 }
 
+int freeResult(void* res_ptr, int num){
+    if(!res_ptr){
+        return 1;
+    }
+    
+    delete[] static_cast<DET_RES*>(res_ptr);
+    return 0;
+}
