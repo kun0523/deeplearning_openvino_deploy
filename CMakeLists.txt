@@ -93,6 +93,14 @@ if(USE_TENSORRT_SEG)
     target_link_libraries(TensorRTDemo_seg PUBLIC trt_seg)
 endif()
 
+option(USE_TENSORRT_ONE "use TensorRT all in one" ON)
+if(USE_TENSORRT_ONE)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/trt_bin)
+    add_subdirectory(src/tensorrt/one_infer)
+    add_executable(TensorRTDemo_one app/trt_test/trt_one_infer.cxx)
+    target_link_libraries(TensorRTDemo_one PUBLIC trt_one)
+endif()
+
 # 使用FastDeploy推理框架执行 分类 检测 分割 OCR任务
 
 

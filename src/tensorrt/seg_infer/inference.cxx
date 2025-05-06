@@ -272,7 +272,7 @@ SEG_RES* doInferenceByImgMat(const cv::Mat& img_mat, const float score_threshold
 
         int input_index = static_cast<ICudaEngine*>(gEngine)->getBindingIndex("images");  // 0
         int output0_index = static_cast<ICudaEngine*>(gEngine)->getBindingIndex("output0");  // 1
-        int output1_index = static_cast<ICudaEngine*>(gEngine)->getBindingIndex("output1");  // 1
+        int output1_index = static_cast<ICudaEngine*>(gEngine)->getBindingIndex("output1");  // 2
         msg_ss << "input_index: " << input_index << " output0: " << output0_index << " output1: " << output1_index << "\n";
 
         // 获取输入维度信息 NCHW
