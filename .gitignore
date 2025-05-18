@@ -34,6 +34,7 @@
 *.xls
 *_log.txt
 
+*.pyc
 build/
 bin/
 .vscode/

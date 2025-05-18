@@ -5,17 +5,10 @@
 #include <vector>
 #include <functional>
 #include <algorithm>
+#include <openvino/openvino.hpp>
 #include <opencv2/opencv.hpp>
-#include <NvInfer.h>
 #include <fstream>
-#include <filesystem>
-#include <chrono>
-#include <iomanip>
-#include <ctime>
-#include <iterator>
-
-using namespace nvinfer1;
-
+#include <string>
 
 struct CLS_RES{
     short cls{-1};
@@ -87,9 +80,8 @@ public:
 
 protected:
     const char* model_pth = nullptr;
-    IRuntime* runtime = nullptr;
-    ICudaEngine* engine = nullptr;
-    IExecutionContext* context = nullptr;
+    ov::Core my_core;
+    ov::CompiledModel* my_model_ptr = nullptr;
 
     char* my_msg = nullptr;
     cv::Mat infer_img;
@@ -108,9 +100,6 @@ public:
 
 private:
     void* inferByMat(cv::Mat& img_mat, const float conf_threshold, int& num, char* msg);
-
-    void* io_buffer[2] = {NULL, NULL};
-    float* outputHostBuffer = nullptr;
 };
 
 class Detection: public Base{
@@ -126,9 +115,6 @@ private:
     void warmUp(char* msg);
     void preProcess(const cv::Mat& org_img, cv::Mat& boarded_img);
     DET_RES* postProcess(const float conf_threshold, cv::Mat& det_result_mat, const double& scale_ratio_, int& det_num);
-
-    void* io_buffer[2] = {NULL, NULL};
-    float* outputHostBuffer = nullptr;
 };
 
 class Segmentation: public Base{
@@ -144,11 +130,6 @@ private:
     void warmUp(char* msg);
     void preProcess(const cv::Mat& org_img, cv::Mat& boarded_img);
     SEG_RES* postProcess(const float conf_threshold, const cv::Mat& pred_mat, const cv::Mat& proto_mat, const cv::Size& org_size, const cv::Size& infer_size, int& det_num);
-
-    void* io_buffer[3] = {NULL, NULL, NULL};
-    float* outputHostBuffer_1 = nullptr;
-    float* outputHostBuffer_2 = nullptr;
-
 };
 
 

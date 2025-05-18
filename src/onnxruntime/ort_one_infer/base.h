@@ -1,21 +1,18 @@
-#ifndef ROOT_H
-#define ROOT_H
+#ifndef ORT_BASE_H
+#define ORT_BASE_H
 
 #include <iostream>
 #include <vector>
 #include <functional>
 #include <algorithm>
+#include <onnxruntime_cxx_api.h>
 #include <opencv2/opencv.hpp>
-#include <NvInfer.h>
 #include <fstream>
 #include <filesystem>
 #include <chrono>
 #include <iomanip>
 #include <ctime>
 #include <iterator>
-
-using namespace nvinfer1;
-
 
 struct CLS_RES{
     short cls{-1};
@@ -86,16 +83,14 @@ public:
     virtual void drawResult(const short stop_period=0, const bool is_save=false) const=0;
 
 protected:
-    const char* model_pth = nullptr;
-    IRuntime* runtime = nullptr;
-    ICudaEngine* engine = nullptr;
-    IExecutionContext* context = nullptr;
-
     char* my_msg = nullptr;
+    std::unique_ptr<Ort::Session> model_ptr = nullptr;
+    // Ort::Session* model_ptr = nullptr;
+
     cv::Mat infer_img;
     std::stringstream msg_ss;
-    void* result_ptr = nullptr;
-    int result_len{};
+    void* result_ptr = nullptr;  // 推理结果数组指针
+    int result_len{};  // 推理结果的个数
 };
 
 class Classify: public Base{
@@ -108,9 +103,6 @@ public:
 
 private:
     void* inferByMat(cv::Mat& img_mat, const float conf_threshold, int& num, char* msg);
-
-    void* io_buffer[2] = {NULL, NULL};
-    float* outputHostBuffer = nullptr;
 };
 
 class Detection: public Base{
@@ -126,9 +118,6 @@ private:
     void warmUp(char* msg);
     void preProcess(const cv::Mat& org_img, cv::Mat& boarded_img);
     DET_RES* postProcess(const float conf_threshold, cv::Mat& det_result_mat, const double& scale_ratio_, int& det_num);
-
-    void* io_buffer[2] = {NULL, NULL};
-    float* outputHostBuffer = nullptr;
 };
 
 class Segmentation: public Base{
@@ -144,11 +133,6 @@ private:
     void warmUp(char* msg);
     void preProcess(const cv::Mat& org_img, cv::Mat& boarded_img);
     SEG_RES* postProcess(const float conf_threshold, const cv::Mat& pred_mat, const cv::Mat& proto_mat, const cv::Size& org_size, const cv::Size& infer_size, int& det_num);
-
-    void* io_buffer[3] = {NULL, NULL, NULL};
-    float* outputHostBuffer_1 = nullptr;
-    float* outputHostBuffer_2 = nullptr;
-
 };
 
 

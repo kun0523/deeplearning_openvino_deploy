@@ -1,5 +1,7 @@
 #include "base.h"
 
+using std::vector;
+
 std::string CLS_RES::get_info(){
     std::stringstream ss;
     ss << "Class_id: " << cls << " | Confidence: " << confidence;
@@ -43,54 +45,18 @@ SEG_RES::~SEG_RES(){
     }
 }
 
-
-class Logger: public ILogger{
-    void log(Severity severity, const char* msg) noexcept{
-        if(severity != Severity::kINFO)
-            std::cout << msg << std::endl;
-    }
-}gLogger;
-
 Base::Base(const char* model_pth_, char* msg):model_pth(model_pth_), my_msg(msg){
     // 加载模型文件
-    std::ifstream file(model_pth, std::ios::binary);
-    if (!file){
-        // 模型文件读取失败
-        throw std::runtime_error("Read Model Failed!");
-    }
-    file.seekg(0, std::ios::end);
-    size_t model_size = file.tellg();
-    file.seekg(0, std::ios::beg);
-    std::vector<char> engine_data(model_size);
-    file.read(engine_data.data(), model_size);
-    file.close();
-    
-    runtime = createInferRuntime(gLogger);
-    if(!runtime){
-        throw std::runtime_error("Failed to create TensorRT runtime");
-    }
-    engine = runtime->deserializeCudaEngine(engine_data.data(), model_size);
-    if(!engine){
-        throw std::runtime_error("Failed to deserialize engine");
-    }
-    context = engine->createExecutionContext();
-    if(!context){
-        throw std::runtime_error("Failed to create execution context");
-    }
+    my_model_ptr = new ov::CompiledModel(my_core.compile_model(model_pth, "CPU", 
+                                                                ov::hint::performance_mode(ov::hint::PerformanceMode::THROUGHPUT), 
+                                                                ov::hint::num_requests(4), ov::auto_batch_timeout(1000)));                       
+
 }
 
 Base::~Base(){
-    if (!context) {
-        context->destroy();
-        context = nullptr;
-    }
-    if (!engine) {
-        engine->destroy();
-        engine = nullptr;
-    }
-    if (!runtime) {
-        runtime->destroy();
-        runtime = nullptr;
+    if(my_model_ptr){
+        delete my_model_ptr;
+        my_model_ptr = nullptr;
     }
     std::cout << "------------- Model Destroyed ------------------------\n";
 }
@@ -111,69 +77,48 @@ void* Classify::inferByMat(cv::Mat& img_mat, const float conf_threshold, int& nu
         result_len = 0;
     }
 
-    if((engine == nullptr) | (context == nullptr)){
+    if(my_model_ptr == nullptr){
         throw std::runtime_error("No Valid Model");
     }
 
-    int input_index = engine->getBindingIndex("images");  // 0
-    int output_index = engine->getBindingIndex("output0");  // 1        
-    msg_ss << "input_index: " << input_index << " output_index: " << output_index << "\n";
+    // 前提假设模型只有一个输入节点
+    ov::Shape input_tensor_shape = my_model_ptr->input().get_shape();
+    std::cout << "Model Input Shape: " << input_tensor_shape << "\n";
 
-    // 获取输入维度信息 NCHW
-    int input_h = engine->getBindingDimensions(input_index).d[2];
-    int input_w = engine->getBindingDimensions(input_index).d[3];
-    msg_ss << "inputH: " << input_h << " inputW:" << input_w << "\n";
+    auto start = std::chrono::high_resolution_clock::now();
+    cv::Mat blob_img = cv::dnn::blobFromImage(img_mat, 1.0/255.0, cv::Size(input_tensor_shape[2], input_tensor_shape[3]), 0.0, true, false, CV_32F);
+    auto input_port = my_model_ptr->input();
+    ov::Tensor input_tensor = ov::Tensor(input_port.get_element_type(), input_port.get_shape(), blob_img.ptr());
+    auto img_preprocess_done = std::chrono::high_resolution_clock::now();
 
-    // 获取输出维度信息 
-    int output_h = engine->getBindingDimensions(output_index).d[0];
-    int output_w = engine->getBindingDimensions(output_index).d[1];
-    msg_ss << "output data format: " << output_h << "x" << output_w << "\n";
+    ov::InferRequest infer_request = my_model_ptr->create_infer_request();
+    infer_request.set_input_tensor(input_tensor);
+    infer_request.infer();
+    auto infer_done = std::chrono::high_resolution_clock::now();
 
-    // 创建GPU显存输入 输出缓冲区
-    msg_ss << "input/output : " << engine->getNbBindings() << "\n"; // get the number of binding indices
-    cudaMalloc(&io_buffer[input_index], input_h * input_w * 3 * sizeof(float));
-    cudaMalloc(&io_buffer[output_index], output_h * output_w * sizeof(float));
+    std::chrono::duration<double, std::milli> img_preprocess_cost = img_preprocess_done - start;
+    std::chrono::duration<double, std::milli> inference_cost = infer_done - img_preprocess_done;
+    std::cout << "Image Preprocess cost: " << img_preprocess_cost.count() << "ms Infer cost: " << inference_cost.count() << "ms\n";
 
-    // 创建临时缓存输出
-    outputHostBuffer = new float[output_h * output_w];
+    ov::Shape output_tensor_shape = my_model_ptr->output().get_shape();
+    std::cout << "Model Output Shape: " << output_tensor_shape << "\n";
 
-    // 创建cuda流
-    cudaStream_t stream;
-    cudaStreamCreate(&stream);
+    size_t batch_num=output_tensor_shape[0], preds_num=output_tensor_shape[1];
+    auto output_tensor = infer_request.get_output_tensor();
+    const float* output_buff = output_tensor.data<const float>();
+    cv::Mat m = cv::Mat(cv::Size(batch_num, preds_num), CV_32F, const_cast<float*>(output_buff));
+    cv::Point max_pos;
+    double max_score;
+    cv::minMaxLoc(m, 0, &max_score, 0, &max_pos);
+    CLS_RES result{-1, -1};
+    result.cls = max_pos.y;
+    result.confidence = max_score;
 
-    // 第一次推理12ms，后续的推理3ms左右
-    cv::Mat tensor = cv::dnn::blobFromImage(img_mat, 1.0/255.0, cv::Size(input_w, input_h), 0.0, true, false);
-
-    // 内存到GPU显存
-    cudaMemcpyAsync(io_buffer[input_index], tensor.ptr<float>(), input_h * input_w * 3 * sizeof(float), cudaMemcpyHostToDevice, stream);
-
-    // 推理
-    context->enqueueV2(io_buffer, stream, nullptr);
-
-    // GPU显存到内存
-    cudaMemcpyAsync(outputHostBuffer, io_buffer[output_index], output_h * output_w * sizeof(float), cudaMemcpyDeviceToHost, stream);
-
-    // 后处理
-    cv::Mat probmat(output_h, output_w, CV_32F, outputHostBuffer);
-    cv::Point maxL, minL;
-    double maxv, minv;
-    cv::minMaxLoc(probmat, &minv, &maxv, &minL, &maxL);
-    int max_index = maxL.x;
-    CLS_RES result(-1, -1);
-    result.cls = max_index;
-    result.confidence = maxv;
-
-    // 同步结束 释放资源  TODO 测试放在实例属性， 推理完之后统一释放？？
-    cudaStreamSynchronize(stream);
-    cudaStreamDestroy(stream);
-    for(int i{}; i<2; i++)
-        cudaFree(io_buffer[i]);
-    if(outputHostBuffer)
-        delete[] outputHostBuffer;
+    std::cout << "Max confidence: " << result.confidence << " Max Class Index: " << result.cls << "\n";
 
     result_ptr = new CLS_RES[1]{result};
     result_len = 1;
-    num = result_len;
+
     return result_ptr;
 }
 
@@ -265,70 +210,56 @@ void* Detection::inferByMat(cv::Mat& img_mat, const float conf_threshold, int& d
         result_len = 0;
     }
 
-    if((engine == nullptr) | (context == nullptr)){
+    if(my_model_ptr == nullptr){
         throw std::runtime_error("No Valid Model");
     }
 
-    int input_index = engine->getBindingIndex("images");  // 0
-    int output_index = engine->getBindingIndex("output0");  // 1
-    std::cout << "input_index: " << input_index << " output_index: " << output_index << "\n";
+    ov::Shape input_tensor_shape = my_model_ptr->input().get_shape();
+    std::cout << "Model Input Shape: " << input_tensor_shape << "\n";
+    
+    double org_h = infer_img.rows, org_w = infer_img.cols;
+    // 前提假设，模型只有一个输入节点
+    // auto input_tensor_shape = infer_session->GetInputTypeInfo(0).GetTensorTypeAndShapeInfo().GetShape();
+    int board_h = input_tensor_shape[2], board_w = input_tensor_shape[3];
+    auto boarded_img = cv::Mat(cv::Size(board_w, board_h), CV_8UC3, cv::Scalar(114, 114, 114));
 
-    // 获取输入维度信息 NCHW
-    int input_h = engine->getBindingDimensions(input_index).d[2];
-    int input_w = engine->getBindingDimensions(input_index).d[3];
-    std::cout << "inputH: " << input_h << " inputW:" << input_w << "\n";
+    double ratio = std::min(board_h/org_h, board_w/org_w);
+    cv::Mat resize_img;
+    cv::resize(infer_img, resize_img, cv::Size(), ratio, ratio, cv::INTER_LINEAR);
+    resize_img.copyTo(boarded_img(cv::Rect(cv::Point(0,0), cv::Point(resize_img.cols, resize_img.rows))));
+    cv::Mat blob_img = cv::dnn::blobFromImage(boarded_img, 1/255.0, cv::Size(board_w, board_h), cv::Scalar(0,0,0), true, false);
+    
+    auto input_port = my_model_ptr->input();
+    ov::Tensor inputensor = ov::Tensor(input_port.get_element_type(), input_port.get_shape(), blob_img.ptr());
+    auto img_preprocess_done = std::chrono::high_resolution_clock::now();
+    
+    ov::InferRequest infer_request = my_model_ptr->create_infer_request();    
+    infer_request.set_input_tensor(inputensor);
+    infer_request.infer();  // 同步推理    
+    auto infer_done = std::chrono::high_resolution_clock::now();
 
-    // 获取输出维度信息 
-    int output_h = engine->getBindingDimensions(output_index).d[1];
-    int output_w = engine->getBindingDimensions(output_index).d[2];
-    std::cout << "output data format: " << output_h << "x" << output_w << "\n";
+    ov::Shape output_tensor_shape = my_model_ptr->output().get_shape();
+    std::cout << "Model Output Shape: " << output_tensor_shape << "\n";
 
-    // 创建GPU显存输入 输出缓冲区
-    cudaMalloc(&io_buffer[input_index], input_h * input_w * 3 * sizeof(float));
-    cudaMalloc(&io_buffer[output_index], output_h * output_w * sizeof(float));
+    size_t res_height=output_tensor_shape[1], res_width=output_tensor_shape[2];
+    auto output_tensor = infer_request.get_output_tensor();
+    const float* output_buff = output_tensor.data<const float>();
+    cv::Mat m = cv::Mat(cv::Size(res_width, res_height), CV_32F, const_cast<float*>(output_buff));
 
-    // 创建零食缓存输出
-    outputHostBuffer = new float[output_h * output_w];
+    vector<DET_RES> out_res_vec;
+    double r = std::min((double)input_tensor_shape[2]/img_mat.rows, (double)input_tensor_shape[3]/img_mat.cols);
 
-    // 创建cuda流
-    cudaStream_t stream;
-    cudaStreamCreate(&stream);
-
-    // 第一次推理12ms，后续的推理3ms左右
-    cv::Mat tensor;
-    preProcess(img_mat, tensor);
-    std::cout << "input mat: " << tensor.size << std::endl;
-
-    // 内存到GPU显存
-    cudaMemcpyAsync(io_buffer[input_index], tensor.ptr<float>(), input_h * input_w * 3 * sizeof(float), cudaMemcpyHostToDevice, stream);
-
-    // 推理
-    context->enqueueV2(io_buffer, stream, nullptr);
-
-    // GPU显存到内存
-    cudaMemcpyAsync(outputHostBuffer, io_buffer[output_index], output_h * output_w * sizeof(float), cudaMemcpyDeviceToHost, stream);
-
-    // 后处理
-    cv::Mat probmat(output_h, output_w, CV_32F, outputHostBuffer);
-    double r = std::min((double)input_h/img_mat.rows, (double)input_w/img_mat.cols);
-    result_ptr = postProcess(conf_threshold, probmat, r, det_num);
+    DET_RES* result = postProcess(conf_threshold, m, r, det_num);
+    
+    result_ptr = result;
     result_len = det_num;
-
-    // 同步结束 释放资源  TODO 测试放在实例属性， 推理完之后统一释放？？
-    cudaStreamSynchronize(stream);
-    cudaStreamDestroy(stream);
-    for(int i{}; i<2; i++)
-        cudaFree(io_buffer[i]);
-    if(outputHostBuffer){
-        delete[] outputHostBuffer;
-    }
-  
-    return result_ptr;
+    
+    return result;
 }
 
 void Detection::preProcess(const cv::Mat& org_img, cv::Mat& blob){
-    int board_h = engine->getBindingDimensions(0).d[2];
-    int board_w = engine->getBindingDimensions(0).d[3];
+    int board_h = 640;
+    int board_w = 640;
 
     double org_h = org_img.rows, org_w = org_img.cols;
     // 前提假设，模型只有一个输入节点
@@ -467,80 +398,55 @@ void* Segmentation::inferByMat(cv::Mat& img_mat, const float conf_threshold, int
         result_len = 0;
     }
 
-    if((engine == nullptr) | (context == nullptr)){
+    if(my_model_ptr==nullptr){
         throw std::runtime_error("No Valid Model");
     }
     
-    int input_index = engine->getBindingIndex("images");  // 0
-    int output0_index = engine->getBindingIndex("output0");  // 1  检测结果
-    int output1_index = engine->getBindingIndex("output1");  // 1  mask proto
-    msg_ss << "input_index: " << input_index << " output0: " << output0_index << " output1: " << output1_index << "\n";
+    double org_h = infer_img.rows, org_w = infer_img.cols;
+    // 前提假设，模型只有一个输入节点
+    auto input_tensor_shape = my_model_ptr->input().get_shape();
+    int board_h = input_tensor_shape[2], board_w = input_tensor_shape[3];
+    auto boarded_img = cv::Mat(cv::Size(board_w, board_h), CV_8UC3, cv::Scalar(114, 114, 114));
 
-    // 获取输入维度信息 NCHW
-    int input_h = engine->getBindingDimensions(input_index).d[2];
-    int input_w = engine->getBindingDimensions(input_index).d[3];
-    msg_ss << "inputH: " << input_h << " inputW:" << input_w << "\n";
+    double ratio = std::min(board_h/org_h, board_w/org_w);
+    cv::Mat resize_img;
+    cv::resize(infer_img, resize_img, cv::Size(), ratio, ratio, cv::INTER_LINEAR);
+    resize_img.copyTo(boarded_img(cv::Rect(cv::Point(0,0), cv::Point(resize_img.cols, resize_img.rows))));
+    cv::Mat blob_img = cv::dnn::blobFromImage(boarded_img, 1/255.0, cv::Size(board_w, board_h), cv::Scalar(0,0,0), true, false);
 
-    // 获取输出维度信息 
-    int pred_h = engine->getBindingDimensions(output0_index).d[1];
-    int pred_w = engine->getBindingDimensions(output0_index).d[2];
-    msg_ss << "pred data format: " << pred_h << "x" << pred_w << "\n";
-    int proto_c = engine->getBindingDimensions(output1_index).d[1];
-    int proto_h = engine->getBindingDimensions(output1_index).d[2];
-    int proto_w = engine->getBindingDimensions(output1_index).d[3];
-    msg_ss << "proto data format: " << proto_c << "x" << proto_h << "x" << proto_w << "\n";
+    auto input_port = my_model_ptr->input();
+    auto input_shape = my_model_ptr->input().get_shape();
+    ov::Tensor inputensor = ov::Tensor(input_port.get_element_type(), input_shape, blob_img.data);
+    std::cout << "Input Shape: " << input_shape.to_string() << "\n";
+    
+    ov::InferRequest infer_request = my_model_ptr->create_infer_request();    
+    infer_request.set_input_tensor(inputensor);
+    infer_request.infer();  // 同步推理    
 
-    // 创建GPU显存输入 输出缓冲区
-    cudaMalloc(&io_buffer[input_index], input_h * input_w * 3 * sizeof(float));
-    cudaMalloc(&io_buffer[output0_index], pred_h * pred_w * sizeof(float));
-    cudaMalloc(&io_buffer[output1_index], proto_c * proto_h * proto_w * sizeof(float));
+    // 已知模型有两个输出节点
+    auto outputs = my_model_ptr->outputs();
+    auto pred_shape = outputs[0].get_shape();
+    auto proto_shape = outputs[1].get_shape();
+    std::cout << "Output Pred Shape: " << pred_shape.to_string() << "\n";
+    std::cout << "Output Proto Shape: " << proto_shape.to_string() << "\n";
 
-    // 创建临时缓存输出
-    outputHostBuffer_1 = new float[pred_h * pred_w];
-    outputHostBuffer_2 = new float[proto_c * proto_h * proto_w];
+    auto pred_tensor = infer_request.get_output_tensor(0);
+    auto proto_tensor = infer_request.get_output_tensor(1);
+    cv::Mat pred = cv::Mat(pred_shape[1], pred_shape[2], CV_32F, pred_tensor.data<float>());
+    pred = pred.t();
+    cv::Mat proto = cv::Mat(proto_shape[1], proto_shape[2]*proto_shape[3], CV_32F, proto_tensor.data<float>());
 
-    // 创建cuda流
-    cudaStream_t stream;
-    cudaStreamCreate(&stream);
-    // 第一次推理12ms，后续的推理3ms左右
-    cv::Mat tensor;
-    preProcess(img_mat, tensor);
+    SEG_RES* result = postProcess(conf_threshold, pred, proto, cv::Size(img_mat.cols, img_mat.rows), cv::Size(input_shape[2], input_shape[3]), det_num);
 
-    // 内存到GPU显存
-    cudaMemcpyAsync(io_buffer[input_index], tensor.ptr<float>(), input_h * input_w * 3 * sizeof(float), cudaMemcpyHostToDevice, stream);
-
-    // 推理
-    context->enqueueV2(io_buffer, stream, nullptr);
-
-    // GPU显存到内存
-    cudaMemcpyAsync(outputHostBuffer_1, io_buffer[output0_index], pred_h * pred_w * sizeof(float), cudaMemcpyDeviceToHost, stream);
-    cudaMemcpyAsync(outputHostBuffer_2, io_buffer[output1_index], proto_c * proto_h * proto_w * sizeof(float), cudaMemcpyDeviceToHost, stream);
-
-    // 后处理
-    cv::Mat predmat(pred_h, pred_w, CV_32F, outputHostBuffer_1);
-    predmat = predmat.t();
-    cv::Mat protomat(proto_c, proto_h*proto_w, CV_32F, outputHostBuffer_2);
-    // std::cout << "predmat: " << predmat.size << " protomat: " << protomat.size << std::endl;
-    result_ptr = postProcess(conf_threshold, predmat, protomat, cv::Size(img_mat.cols, img_mat.rows), cv::Size(input_w, input_h), det_num);
+    result_ptr = result;
     result_len = det_num;
 
-    // 同步结束 释放资源
-    cudaStreamSynchronize(stream);
-    cudaStreamDestroy(stream);
-    for(int i{}; i<3; i++)
-        cudaFree(io_buffer[i]);
-    if(outputHostBuffer_1){
-        delete[] outputHostBuffer_1;
-    }
-    if(outputHostBuffer_2){
-        delete[] outputHostBuffer_2;
-    }
-    return result_ptr;
+    return result;
 }
 
 void Segmentation::preProcess(const cv::Mat& org_img, cv::Mat& blob){
-    int input_h = engine->getBindingDimensions(0).d[2];
-    int input_w = engine->getBindingDimensions(0).d[3];
+    int input_h = 640;
+    int input_w = 640;
 
     double org_h = org_img.rows, org_w = org_img.cols;
     // 前提假设，模型只有一个输入节点

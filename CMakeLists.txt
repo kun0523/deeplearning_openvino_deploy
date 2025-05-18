@@ -41,6 +41,14 @@ if(USE_ORT_SEG)
     target_link_libraries(ORTDemo_seg PUBLIC ort_seg)
 endif()
 
+option(USE_ORT_ONE "use onnxruntime all in one" ON)
+if(USE_ORT_ONE)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/ort_bin)
+    add_subdirectory(src/onnxruntime/ort_one_infer)
+    add_executable(ORTDemo_one app/ort_test/onnx_one_infer.cxx)
+    target_link_libraries(ORTDemo_one PUBLIC ort_one)
+endif()
+
 
 # 使用OpenVINO推理框架执行 分类 检测 分割任务
 option(USE_OPENVINO_CLS "use openvino do classification" ON)
@@ -65,6 +73,14 @@ if(USE_OPENVINO_SEG)
     add_subdirectory(src/openvino/seg_infer)
     add_executable(OpenVINODemo_seg app/openvino_test/openvino_seg_infer.cxx)
     target_link_libraries(OpenVINODemo_seg PUBLIC openvino_seg)
+endif()
+
+option(USE_OPENVINO_ONE "use openvino all in one" ON)
+if(USE_OPENVINO_ONE)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/openvino_bin)
+    add_subdirectory(src/openvino/opv_one_infer)
+    add_executable(OpenVINODemo_one app/openvino_test/openvino_one_infer.cxx)
+    target_link_libraries(OpenVINODemo_one PUBLIC openvino_one)
 endif()
 
 
